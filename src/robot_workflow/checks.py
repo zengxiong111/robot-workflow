@@ -121,14 +121,17 @@ def _matches(snapshot_value, root):
     return current["snapshot_id"] == snapshot_value["snapshot_id"]
 
 
-def run_checks(snapshot_value, root):
+def run_checks(snapshot_value, root, requirement_ids=None):
     """Run configured checks, returning evidence only while source identity holds."""
     from .engine import validate_snapshot
+    from .revalidation import current_runtime, command_identity
     validate_snapshot(snapshot_value)
     config = deepcopy(snapshot_value["config"])
     validate(config)
     root = Path(root).resolve()
-    checks = config.get("validation_checks", [])
+    selected_requirements = None if requirement_ids is None else set(requirement_ids)
+    checks = [item for item in config.get("validation_checks", [])
+              if selected_requirements is None or item["requirement"] in selected_requirements]
     by_requirement = {}
     requirements = {req["id"]: req for req in config.get("requirements", [])}
 
@@ -153,6 +156,13 @@ def run_checks(snapshot_value, root):
                              reason="source_coverage_unknown",
                              repository_commit=snapshot_value["repositories"][spec["repository"]]["commit"])
                 continue
+            command_inventory = snapshot_value["repositories"][spec["repository"]].get("command_inventory", {})
+            if command_inventory.get("coverage") != "complete":
+                record_check(spec, "unknown", "Selected repository command inventory is incomplete; command was not run",
+                             reason="command_inventory_unknown",
+                             inventory_problems=command_inventory.get("problems", []),
+                             repository_commit=snapshot_value["repositories"][spec["repository"]]["commit"])
+                continue
             repo_root = (root / repo_specs[spec["repository"]]["path"]).resolve()
             if not repo_root.is_relative_to(root) or not repo_root.is_dir():
                 record_check(spec, "unknown", "Repository is unavailable or escapes workflow root",
@@ -168,13 +178,13 @@ def run_checks(snapshot_value, root):
                 outcome, summary = "unknown", f"Executable unavailable: {exc.filename}"
                 details = {"reason": "executable_missing", "duration_seconds": duration,
                            "repository_commit": snapshot_value["repositories"][spec["repository"]]["commit"],
-                           "environment": {"python": platform.python_version(), "platform": sys.platform}}
+                           "environment": {**current_runtime(), "command": command_identity(spec["argv"][0])}}
             except OSError as exc:
                 duration = time.monotonic() - started
                 outcome, summary = "unknown", f"Command could not be started: {exc}"
                 details = {"reason": "execution_error", "duration_seconds": duration,
                            "repository_commit": snapshot_value["repositories"][spec["repository"]]["commit"],
-                           "environment": {"python": platform.python_version(), "platform": sys.platform}}
+                           "environment": {**current_runtime(), "command": command_identity(spec["argv"][0])}}
             else:
                 stdout_capture = _BoundedCapture(process.stdout)
                 stderr_capture = _BoundedCapture(process.stderr)
@@ -232,7 +242,7 @@ def run_checks(snapshot_value, root):
                 details = {"stdout": stdout_capture.text(), "stderr": stderr_capture.text(),
                            "exit_code": exit_code, "duration_seconds": duration,
                            "repository_commit": snapshot_value["repositories"][spec["repository"]]["commit"],
-                           "environment": {"python": platform.python_version(), "platform": sys.platform}}
+                           "environment": {**current_runtime(), "command": command_identity(spec["argv"][0])}}
                 if reason:
                     details["reason"] = reason
             record_check(spec, outcome, summary, **details)

@@ -1,4 +1,4 @@
-"""Command-line entry point; sources are never imported or executed."""
+"""Command-line entry point; command checks require explicit execution."""
 
 import argparse
 import json
@@ -69,6 +69,12 @@ def fetch(config, root):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Robot Workflow: versioned engineering dependency and evidence analysis")
     sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser('serve', help='Open a local engineering workspace with explicit actions')
+    p.add_argument('--root', required=True)
+    p.add_argument('--state-dir', required=True)
+    p.add_argument('--config', help='Defaults to STATE_DIR/workflow.json')
+    p.add_argument('--host', default='127.0.0.1', choices=['127.0.0.1', 'localhost', '::1'])
+    p.add_argument('--port', type=int, default=8780)
     p = sub.add_parser('setup', help='Guided setup and first local report; no Git updates')
     p.add_argument('--root')
     p.add_argument('--state-dir')
@@ -124,6 +130,7 @@ def main(argv=None):
     p.add_argument("--snapshot", required=True)
     p.add_argument("--output", required=True)
     p.add_argument("--root", help="Source root for explicit command checks")
+    p.add_argument("--evidence", help="Prior evidence to reuse when its declared dependencies remain current")
     p.add_argument("--run-checks", action="store_true", help="Explicitly execute configured validation commands")
     p = sub.add_parser("cases", help="Create and manage local change cases")
     p.add_argument("action", choices=["sync", "list", "update"])
@@ -140,7 +147,13 @@ def main(argv=None):
     p.add_argument("--cases", help="Local case state to embed in the report")
     args = parser.parse_args(argv)
     try:
-        if args.command == 'setup':
+        if args.command == 'serve':
+            from .server import serve
+            config = args.config or str(Path(args.state_dir) / 'workflow.json')
+            address = f'[{args.host}]' if ':' in args.host else args.host
+            print(f'Robot Workflow: http://{address}:{args.port} (Ctrl+C to stop)', flush=True)
+            serve(config, args.root, args.state_dir, host=args.host, port=args.port)
+        elif args.command == 'setup':
             from .onboarding import setup
             return setup(args)
         elif args.command == 'doctor':
@@ -196,7 +209,8 @@ def main(argv=None):
             if args.fail_on_impact and (result["summary"]["semantic_changes"] or result["summary"]["unknown"] or result["summary"]["unregistered_changes"]):
                 return 2
         elif args.command == "verify":
-            result = verify(read_json(args.snapshot), root=args.root, run_commands=args.run_checks)
+            result = verify(read_json(args.snapshot), root=args.root, run_commands=args.run_checks,
+                            evidence=read_json(args.evidence) if args.evidence else None)
             write_json(args.output, result)
             print(json.dumps({"recorded": len(result["records"]), "failed": sum(r["result"] == "fail" for r in result["records"]),
                               "unknown": sum(r["result"] == "unknown" for r in result["records"])}))

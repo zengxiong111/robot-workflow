@@ -1,4 +1,4 @@
-# Version 0.4.0 Scope
+# Version 0.5.0 Scope
 
 [简体中文](spec.zh-CN.md)
 
@@ -29,6 +29,10 @@ Robot Workflow is a reusable open-source engineering dependency and evidence too
 13. Persist owner claims, disposition notes and reopening; case state is separate from verification results.
 14. Display check details, current-snapshot cases and input/output direction in reports.
 
+15. Provide a loopback Web workspace for explicit repository import, reviewed configuration saves, refresh, command checks and case disposition; no background command execution.
+16. Validate optional engineering object kinds and output/input ports; show declaration mismatches separately from execution evidence.
+17. Reuse prior checks only when relevant inputs and check definitions remain valid, emit a revalidation plan, and retain exact-snapshot handling of legacy records.
+
 ## Validation acceptance
 
 - Exercise the generic minimal example with versioned source snapshots.
@@ -38,4 +42,4 @@ Robot Workflow is a reusable open-source engineering dependency and evidence too
 
 ## Delivery boundaries
 
-0.4.0 does not execute inspected code by default; declared commands require explicit `verify --run-checks`. The runner is not a sandbox, and monitoring does not automatically execute physical jobs. GitHub push webhook receivers, graph authoring UI, CAD/PLM integrations and model-backed autonomous agents are not included. Monitoring uses polling and generic outbound notifications. Sources, logs and historical snapshots used during validation remain outside the project. Public publication requires an accessible repository creation/push path; local packaging must not be described as an already published GitHub release.
+0.5.0 does not execute inspected code by default; declared commands require explicit `verify --run-checks` or the console check action. The runner is not a sandbox, and monitoring does not automatically execute physical jobs. GitHub push webhook receivers, general graph authoring, authenticated team hosting, CAD/PLM integrations and model-backed autonomous agents are not included. Monitoring uses polling and generic outbound notifications. Sources, logs and historical snapshots used during validation remain outside the project. Public publication requires an accessible repository creation/push path; local packaging must not be described as an already published GitHub release.

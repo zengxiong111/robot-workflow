@@ -2,7 +2,7 @@
 
 [简体中文](architecture.zh-CN.md)
 
-This document specifies the 0.4.0 engineering graph, snapshot, impact and evidence boundaries. Configuration is JSON; runtime dependencies are Python 3.11+ and optional Git provenance.
+This document specifies the 0.5.0 engineering graph, snapshot, impact and evidence boundaries. Configuration is JSON; runtime dependencies are Python 3.11+ and optional Git provenance.
 
 ## Contents
 
@@ -29,7 +29,7 @@ workflow.json + local checkouts
      impact JSON → offline HTML
 ```
 
-Sources are parsed as data. Python files are never imported; robot code, training entry points and ROS nodes are never executed. Only `fetch` creates checkouts; the snapshot/compare/report commands do not modify repository inputs.
+Sources are parsed as data. Python files are never imported; default analysis does not execute robot code, training entry points or ROS nodes. Explicit declared command checks can execute repository code. `fetch` and explicit console repository import create checkouts; the snapshot/compare/report commands do not modify repository inputs.
 
 ## Configuration
 
@@ -48,6 +48,24 @@ Sources are parsed as data. Python files are never imported; robot code, trainin
 Repository paths and artifact globs cannot use absolute paths or `..`. Source symlinks cannot escape their repository or point into `.git`. Unmatched globs, oversized files, invalid syntax and unresolved LFS pointers produce unknown coverage.
 
 The same file can be registered in separate components. Avoid overlapping globs with different parsers inside one component; the final matching specification currently determines its representation.
+
+### Engineering objects and ports
+
+Optional `nodes[].kind` accepts `component`, `model`, `dataset`, `calibration`, `test`, `requirement` or `artifact`. Ports declare `id`, `direction` (`input`/`output`), optional label and contract. Supported contract fields are `type`, `unit`, `frame`, `joint_order` and positive finite `rate_hz`. An edge with ports must declare both `from_port` and `to_port`, connecting an existing output to an existing input.
+
+```json
+{
+  "id": "robot",
+  "kind": "model",
+  "ports": [{
+    "id": "joint-state",
+    "direction": "output",
+    "contract": {"type": "joint_state", "unit": "rad", "joint_order": ["j1", "j2"]}
+  }]
+}
+```
+
+The report compares declarations field by field; absent declarations are unknown. No unit conversion or frame transform is inferred. A matching declaration is separate from source or execution evidence.
 
 ## Extractors
 
@@ -99,7 +117,7 @@ A requirement may declare an equality assertion using a source node, artifact pa
 
 Use `equals_source` instead of `equals` to compare with another extracted source. JSON Pointer supports list indices and `~0` / `~1` escapes.
 
-`verify` emits records containing requirement ID, result, check details, exact snapshot ID and fingerprints of every requirement component. `compare --evidence` accepts them as current only when all bindings match. A change anywhere in the candidate snapshot conservatively expires old records. Requirements without declared checks remain unverified; absent source coverage overrides any passing assertion with unknown.
+`verify` records provenance plus `evidence_scope` check signatures. Source assertions and interface checks bind selected extracted values, their availability, source specifications and check definitions. Unrelated inputs may change without expiring these records. Command checks conservatively bind the selected repository content inventory, command definitions tool implementation, environment-variable digest, and Python/command executable identity. This does not capture every external dependency or hardware state. Legacy records without a scope still require the exact snapshot and source fingerprints. Missing coverage remains unknown.
 
 Snapshot IDs hash the graph, repository provenance and captured source state. They detect accidental alteration; they are not signatures or trusted attestations. Evidence JSON can be authored externally and therefore must be reviewed before relying on it.
 
@@ -107,11 +125,11 @@ Snapshot IDs hash the graph, repository provenance and captured source state. Th
 
 `interface_contracts` compares extracted fields between components named by a requirement, returning pass/fail/unknown. `validation_checks` runs argv with `shell=False` in the selected repository; default verification skips commands and records unknown. `verify --run-checks --root DIR` checks full snapshot identity before and after execution; timeout, missing executable, source drift or missing coverage is unknown. Output is truncated to 4000 bytes per stream; default timeout is 60 seconds, maximum 3600 seconds. POSIX timeout terminates the owned process group; Windows terminates only the main owned process.
 
-Checks for one requirement are combined: any fail remains fail, otherwise any unknown remains unknown, and only all-pass checks verify it. Evidence still binds to the full snapshot. Case state lives separately outside the source root, updates through file locking and atomic replacement, and appears only for matching candidate identities.
+Checks for one requirement are combined: any fail remains fail, otherwise any unknown remains unknown, and only all-pass checks verify it. Scoped evidence identifies reusable results; old evidence remains snapshot-bound. Case state lives separately outside the source root, updates through file locking and atomic replacement, and appears only for matching candidate identities.
 
 ## Integration and extension
 
-CI can invoke `snapshot`, `verify` and `compare --fail-on-impact`, then attach the JSON/HTML output for human review. Version 0.4.0 provides polling and outbound notifications; no inbound GitHub webhook receiver is implemented.
+CI can invoke `snapshot`, `verify` and `compare --fail-on-impact`, then attach the JSON/HTML output for human review. Version 0.5.0 provides polling and outbound notifications; no inbound GitHub webhook receiver is implemented.
 
 To add a parser, implement it in `contracts.py`, register its name, add behavior-focused tests and document its facets. Domain-neutral graph propagation stays in `engine.py`. External simulator or hardware evidence needs a future adapter with explicit input/version bindings and validation scope; no external execution is inferred from source assertions.
 

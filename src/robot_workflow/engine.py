@@ -5,8 +5,10 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
+import stat
 
 from .contracts import PARSERS, digest, extract
 
@@ -61,8 +63,10 @@ def validate_config(config):
             raise ValueError("Requirement references unknown node")
     from .interface_contracts import validate as validate_interfaces
     from .checks import validate as validate_checks
+    from .objects import validate as validate_objects
     validate_interfaces(config)
     validate_checks(config)
+    validate_objects(config)
     return config
 
 
@@ -102,6 +106,51 @@ def inventory(root, is_git):
     return entries
 
 
+def command_inventory(root, is_git):
+    """Complete bounded-memory content inventory reserved for explicitly checked repos."""
+    root = Path(root).resolve()
+    paths = set()
+    if is_git:
+        tracked = git_value(root, "ls-files", "-z") or ""
+        untracked = git_value(root, "ls-files", "--others", "--exclude-standard", "-z") or ""
+        ignored = git_value(root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z") or ""
+        paths.update(p for p in tracked.split("\0") if p)
+        paths.update(p for p in untracked.split("\0") if p)
+        paths.update(p for p in ignored.split("\0") if p)
+    elif root.is_dir():
+        paths.update(path.relative_to(root).as_posix() for path in root.rglob("*")
+                     if path.is_file() and ".git" not in path.parts)
+    aggregate, problems, file_count = hashlib.sha256(), [], 0
+    for relative in sorted(paths):
+        path = root / relative
+        try:
+            resolved = path.resolve(strict=True)
+            if not resolved.is_relative_to(root) or ".git" in resolved.relative_to(root).parts:
+                problems.append({"path": relative, "reason": "path escapes repository or enters .git"})
+                continue
+            if not path.is_file():
+                problems.append({"path": relative, "reason": "tracked file unavailable"})
+                continue
+            file_hasher = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    file_hasher.update(chunk)
+            content_hash = file_hasher.hexdigest()
+            file_stat = path.lstat()
+            link_target = os.readlink(path) if stat.S_ISLNK(file_stat.st_mode) else ""
+            mode = str(stat.S_IMODE(file_stat.st_mode))
+            aggregate.update(b"\0" + relative.encode("utf-8", errors="surrogateescape") + b"\0" +
+                             mode.encode() + b"\0" + link_target.encode("utf-8", errors="surrogateescape") +
+                             b"\0" + content_hash.encode())
+            file_count += 1
+        except OSError as exc:
+            if len(problems) < 50:
+                problems.append({"path": relative, "reason": str(exc)})
+    return {"content_digest": aggregate.hexdigest(), "file_count": file_count,
+            "problem_count": len(problems), "problems": problems,
+            "coverage": "complete" if not problems else "unknown"}
+
+
 def snapshot(config, root, label="baseline"):
     validate_config(config)
     config = deepcopy(config)
@@ -122,6 +171,8 @@ def snapshot(config, root, label="baseline"):
             "git_checkout": is_git,
             "inventory": inventory(path, is_git),
         }
+        if any(item["repository"] == repo["id"] for item in config.get("validation_checks", [])):
+            repositories[repo["id"]]["command_inventory"] = command_inventory(path, is_git)
     nodes = {}
     for node in config["nodes"]:
         repo = repositories[node["repository"]]
@@ -201,8 +252,17 @@ def changes_at(before, after, prefix="", limit=60):
 def compare(before, after, evidence=None):
     validate_snapshot(before)
     validate_snapshot(after)
-    if before["config_hash"] != after["config_hash"]:
-        raise ValueError("Configs differ: compare sources with one graph, then review graph edits separately")
+    if before["nodes"].keys() != after["nodes"].keys() or before["repositories"].keys() != after["repositories"].keys():
+        raise ValueError("Compare requires stable repository and node identifiers")
+    def graph_contract(config):
+        return {
+            "repositories": {repo["id"]: repo["path"] for repo in config.get("repositories", [])},
+            "nodes": {node["id"]: node["repository"] for node in config.get("nodes", [])},
+            "edges": config.get("edges", []),
+            "requirements": {req["id"]: req["nodes"] for req in config.get("requirements", [])},
+        }
+    if graph_contract(before["config"]) != graph_contract(after["config"]):
+        raise ValueError("Configs differ: repository, node, edge, and requirement graph changes need separate review")
     config = after["config"]
     deltas = []
     starts = []
@@ -283,6 +343,11 @@ def compare(before, after, evidence=None):
             elif record["reviewed_fingerprint"] != node["fingerprint"] or record["reviewed_commit"] != repo["commit"]:
                 state = "stale"
         readiness[node_id] = {**record, "state": state, "scope": "Maintainer source review; not execution evidence"}
+    from .revalidation import prepare_previous
+    from .objects import engineering_objects
+    reusable_records, revalidation = prepare_previous(evidence, after)
+    reusable_by_req = {item["requirement"]: item for item in reusable_records}
+    revalidation_by_req = {item["requirement"]: item for item in revalidation}
     requirements = []
     records = (evidence or {}).get("records", [])
     for req in config.get("requirements", []):
@@ -291,29 +356,54 @@ def compare(before, after, evidence=None):
         matching = [r for r in records if r.get("requirement") == req["id"]]
         if matching:
             record = matching[-1]
-            valid = record.get("snapshot_id") == after["snapshot_id"] and all(
-                record.get("fingerprints", {}).get(n) == after["nodes"][n]["fingerprint"] for n in req["nodes"])
+            valid = False
+            validity_reason = "evidence is stale or no longer covers the configured checks"
+            if record.get("snapshot_id") != after["snapshot_id"] and req["id"] in reusable_by_req:
+                record = reusable_by_req[req["id"]]
+                valid, validity_reason = True, "scoped_dependencies_unchanged"
+            elif record.get("snapshot_id") == after["snapshot_id"]:
+                from .revalidation import reusable, scopes
+                valid, validity_reason = reusable(
+                    record, after, scopes(after).get(req["id"], {"version": 1, "checks": []}),
+                    check_runtime=record.get("result") == "pass")
             if valid and record.get("result") in {"pass", "fail"}:
                 state = "verified" if record["result"] == "pass" else "failed"
                 reason = record.get("summary", "Recorded check result")
             elif valid and record.get("result") == "unknown":
                 state, reason = "unknown", record.get("summary", "Check could not be completed")
+            elif (record.get("snapshot_id") == after["snapshot_id"] and
+                  record.get("result") == "unknown" and
+                  validity_reason.startswith(("command_inventory_incomplete", "source_coverage_unknown"))):
+                state = "unknown"
+                reason = f"{record.get('summary', 'Verification is unknown')}; {validity_reason}"
             else:
-                state, reason = "stale", "Evidence does not bind to this candidate snapshot and source fingerprints"
+                state, reason = "stale", validity_reason
+        decision = revalidation_by_req.get(req["id"], {"action": "not_configured", "reason": "no checks configured", "relevant_check_ids": []})
+        if matching and state == "verified" and record.get("snapshot_id") != after["snapshot_id"]:
+            record = {**record, "evidence_reused": True, "from_snapshot_id": record.get("snapshot_id")}
+            decision = {**decision, "action": "reuse", "reason": "scoped dependencies unchanged"}
+        else:
+            if matching and state in {"failed", "unknown", "stale"} and decision.get("relevant_check_ids"):
+                decision = {**decision, "action": "run", "reason": "prior result did not establish a passing complete check set"}
+            elif not decision.get("relevant_check_ids"):
+                decision = {**decision, "action": "not_configured"}
         if any(impacts[n]["status"] == "unknown" for n in req["nodes"]):
             state, reason = "unknown", "Required source coverage is incomplete"
         requirements.append({**req, "state": state, "reason": reason,
-                             "verification": matching[-1] if matching else None})
+                             "verification": record if matching else None,
+                             "revalidation": decision})
     return {
         "schema_version": 1, "kind": "impact_report", "project": config.get("project", "Robot Workflow"),
         "baseline": {"id": before["snapshot_id"], "label": before["label"], "repositories": {
-            key: {k: v for k, v in repo.items() if k != "inventory"} for key, repo in before["repositories"].items()}},
+            key: {k: v for k, v in repo.items() if k not in {"inventory", "command_inventory"}} for key, repo in before["repositories"].items()}},
         "candidate": {"id": after["snapshot_id"], "label": after["label"], "repositories": {
-            key: {k: v for k, v in repo.items() if k != "inventory"} for key, repo in after["repositories"].items()}},
+            key: {k: v for k, v in repo.items() if k not in {"inventory", "command_inventory"}} for key, repo in after["repositories"].items()}},
         "config": config,
+        "engineering_objects": engineering_objects(config),
         "coverage": {n: {"baseline": before["nodes"][n]["problems"], "candidate": after["nodes"][n]["problems"]}
                      for n in after["nodes"]},
         "changes": deltas, "impacts": impacts, "readiness": readiness, "requirements": requirements,
+        "revalidation": [item.get("revalidation") for item in requirements],
         "unregistered_changes": unregistered,
         "summary": {"changed_files": len(deltas), "semantic_changes": sum(d["semantic"] for d in deltas),
                     "potential_impact": sum(i["status"] == "potential_impact" for i in impacts.values()),

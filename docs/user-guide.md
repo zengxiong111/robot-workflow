@@ -2,12 +2,13 @@
 
 [简体中文](user-guide.zh-CN.md)
 
-Version 0.4.0. A practical guide to setting up, reviewing and monitoring a team engineering workflow.
+Version 0.5.0. A practical guide to setting up, reviewing and monitoring a team engineering workflow.
 
 ## Contents
 
 - [Purpose and collaboration](#purpose-and-collaboration)
 - [Install and prepare directories](#install-and-prepare-directories)
+- [Local Web workspace](#local-web-workspace)
 - [Guided setup](#guided-setup)
 - [First run with the bundled example](#first-run-with-the-bundled-example)
 - [Create your own workflow](#create-your-own-workflow)
@@ -19,12 +20,13 @@ Version 0.4.0. A practical guide to setting up, reviewing and monitoring a team 
 - [Add repositories or change configuration](#add-repositories-or-change-configuration)
 - [Fixed comparisons and CI](#fixed-comparisons-and-ci)
 - [Contracts, command checks and change cases](#contracts-command-checks-and-change-cases)
+- [Ports and selective revalidation](#ports-and-selective-revalidation)
 - [Troubleshooting and boundaries](#troubleshooting-and-boundaries)
 - [Further reading](#further-reading)
 
 ## Purpose and collaboration
 
-Robot Workflow v0.4.0 is a Git-backed engineering dependency and change-impact tool. It connects robot models, data, training, perception and deployment through a reviewed graph. It reads local source, captures fingerprints, compares versions and identifies components requiring review. Git supplies commits and synchronization; the JSON graph supplies engineering relationships.
+Robot Workflow v0.5.0 is a Git-backed engineering dependency and change-impact tool. It connects robot models, data, training, perception and deployment through a reviewed graph. It reads local source, captures fingerprints, compares versions and identifies components requiring review. Git supplies commits and synchronization; the JSON graph supplies engineering relationships.
 
 Use it to answer who should review a change, why their component may be affected, and which source checks have evidence. Discovery and monitoring do not execute inspected code by default; explicit command checks require `--run-checks`. A compatible source assertion is not proof of physical task success.
 
@@ -42,7 +44,7 @@ Requires Python 3.11+ and Git for discovery/synchronization. No AI service, ROS 
 Keep tool source, inspected checkouts and workflow state separate. State must be outside the entire `repos` root, not merely outside one checkout. Authentication for private remotes uses your existing Git configuration.
 
 1. Clone the tool and install into an external virtual environment.
-2. These instructions describe `0.4.0`. Check the installed version; the default branch may change in the future.
+2. These instructions describe `0.5.0`. Check the installed version; the default branch may change in the future.
 3. Continue using the activated environment for all subsequent commands.
 
 ```bash
@@ -55,6 +57,18 @@ python -m pip install ./tool
 python -c 'import robot_workflow; print(robot_workflow.__version__)'
 robot-workflow --help
 ```
+
+## Local Web workspace
+
+Start with an existing directory for inspected repositories and a separate state directory:
+
+```bash
+robot-workflow serve --root /tmp/my-robot-repos --state-dir /tmp/my-robot-workflow --port 8780
+```
+
+Open `http://127.0.0.1:8780`. Review discovered repositories, edit component owners, keep/remove/reverse inferred edges, then save the reviewed configuration. You can explicitly clone a GitHub HTTPS repository into a new relative directory. Refresh captures sources and generates the report; change cases can be claimed, closed with a note, and reopened in the page. The command-check button explicitly executes declared commands; ordinary refresh does not execute them. The console is a local single-user service, not an authenticated shared team server. Saving a changed configuration establishes its own baseline and retains earlier state; it does not establish cross-configuration compatibility. Rediscovery after adding a repository preserves authored registrations and appends new findings.
+
+The offline report remains available. The live console adds operations; it does not change evidence scope or certify robot behavior.
 
 ## Guided setup
 
@@ -352,6 +366,19 @@ Use the following command when installing from a local checkout; the source path
 python -m pip install /path/to/local/robot-workflow
 python -c 'import robot_workflow; print(robot_workflow.__version__)'
 ```
+
+## Ports and selective revalidation
+
+Declare node `kind` and optional `ports`, then connect output/input IDs with `from_port`/`to_port`. The interface view compares configuration declarations; it does not produce runtime evidence. See [the architecture](architecture.md#engineering-objects-and-ports) for the schema.
+
+Pass prior evidence to reuse checks whose declared dependencies and definitions remain valid:
+
+```bash
+robot-workflow verify --snapshot /tmp/robot-candidate.json \
+  --evidence /tmp/robot-evidence.json --output /tmp/robot-candidate-evidence.json
+```
+
+The report lists each requirement as `reuse`, `run` or `not_configured`, with check IDs and reasons. Relevant field or command-input changes expire evidence; unrelated source changes can preserve it. Command reuse conservatively checks tracked, untracked and ignored files in the selected repository, tool implementation, environment-variable digest and command executable identity; sparse or unreadable inputs remain unknown. It does not cover every external service, system dependency or hardware state. `--run-checks --root DIR` explicitly runs checks that cannot be reused. To force fresh checks, omit `--evidence`. Old evidence without scope remains tied to its exact snapshot.
 
 ## Troubleshooting and boundaries
 

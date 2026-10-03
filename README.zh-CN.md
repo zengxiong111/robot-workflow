@@ -4,10 +4,11 @@
 
 Robot Workflow 是面向机器人团队的开源工程工作流工具。登记机器人模型、参考数据、训练、感知和部署之间的关系，对比带版本的源码快照，查看下游影响，以及采用新版本所需的验证证据。
 
-0.4.0 版本 提供本地 CLI 和离线交互报告。运行依赖为 Python 3.11+；记录 Git checkout 溯源时需要 Git。无需 AI 服务、ROS 安装或仿真器。
+0.5.0 版本提供本地 CLI、本机网页工作台和离线交互报告。运行依赖为 Python 3.11+；记录 Git checkout 溯源时需要 Git。无需 AI 服务、ROS 安装或仿真器。
 
 ## 目录
 
+- [本地网页工作台](#本地网页工作台)
 - [引导式设置](#引导式设置)
 - [功能](#功能)
 - [创建并监测自己的工作流](#创建并监测自己的工作流)
@@ -16,9 +17,22 @@ Robot Workflow 是面向机器人团队的开源工程工作流工具。登记�
 - [命令与状态](#命令与状态)
 - [边界与后续方向](#边界与后续方向)
 - [契约、命令检查与变更处理](#契约命令检查与变更处理)
+- [端口与精确重测](#端口与精确重测)
 - [开发与许可证](#开发与许可证)
 
 完整操作流程见[用户说明书](docs/user-guide.zh-CN.md)，包括初始化、依赖审查、监测、负责人 Webhook 和故障排查。
+
+## 本地网页工作台
+
+准备已有仓库的父目录，以及独立的状态目录，然后启动：
+
+```bash
+robot-workflow serve --root /tmp/my-robot-repos --state-dir /tmp/my-robot-workflow --port 8780
+```
+
+打开 `http://127.0.0.1:8780`。审查发现的仓库、编辑组件负责人、保留/删除/反向推断依赖，再保存已审阅配置。也可以显式克隆 GitHub HTTPS 仓库到一个不存在的相对目录。刷新会采集源码并生成报告；页面支持认领事项、填写说明后关闭，以及重新打开。命令检查按钮显式执行已声明命令；普通刷新不会执行命令。控制台是本地单用户服务，不是带身份认证的团队共享服务器。 保存变更后的配置会建立该配置的新基线，并保留此前状态；这不构成跨配置兼容性结论。添加仓库后的重新发现会保留人工登记，只追加新发现。
+
+离线报告继续可用。网页工作台增加操作入口，不改变验证证据范围，也不证明机器人行为成功。
 
 ## 引导式设置
 
@@ -50,14 +64,14 @@ robot-workflow open --state-dir /tmp/my-robot-repos-workflow
 | 源码快照 | Git commit、dirty 状态、文件 SHA-256、登记源码覆盖及契约之外的 Git 文件清单 |
 | 语义变化 | URDF 运动学/动力学/visual、Python AST、JSON、TOML、保守 YAML、ROS schema、文本及二进制哈希 |
 | 影响分析 | 有向传递传播，附来源、代表性路径、依据和所需验证 |
-| 验证证据 | 确定性的源文件断言，绑定精确快照与源码指纹；明确显示证据过期 |
+| 验证证据 | 声明检查绑定相关输入/检查签名；旧证据仍绑定精确快照；明确显示过期 |
 | 交互报告 | 工作流画布、场景选择、组件检查面板、搜索、状态过滤、缩放、变更、需求和版本组合 |
 | 离线使用 | 独立 HTML，支持中英文控件及 JSON 导入/导出，不发起网络请求 |
 | 集成门禁 | 可选的非零退出码，提示源码变化、覆盖缺失或未登记变化 |
 
 ## 创建并监测自己的工作流
 
-将已有 Git checkout 放在同一目录下。配置、报告和监测状态必须放在这些 checkout 之外。工具不会执行被检查项目的代码。
+将已有 Git checkout 放在同一目录下。配置、报告和监测状态必须放在这些 checkout 之外。默认发现与监测不会执行被检查项目的代码。
 
 1. 启动工作流，自动发现仓库与依赖：
 
@@ -139,6 +153,7 @@ robot-workflow open --state-dir /tmp/my-robot-repos-workflow
 
 | 命令 | 用途 |
 |---|---|
+| `serve --root DIR --state-dir DIR [--config FILE] [--port 8780]` | 启动本机网页工作台；配置默认位于 STATE_DIR/workflow.json |
 | `setup [--root DIR] [--state-dir DIR] [--yes] [--no-open]` | 引导本地设置、审查依赖并生成首份报告 |
 | `doctor --config FILE --root DIR` | 解释本地设置与覆盖问题 |
 | `open --state-dir DIR` | 打开最新监测报告 |
@@ -148,7 +163,7 @@ robot-workflow open --state-dir /tmp/my-robot-repos-workflow
 | `watch --config FILE --root DIR --state-dir DIR [--interval 30] [--once] [--no-update]` | 保存影响报告并按负责人路由变更事件 |
 | `fetch --config FILE --root DIR` | 按声明的源码 glob 新建稀疏 GitHub clone；不会替换已有目录 |
 | `snapshot --config FILE --root DIR --output FILE [--label NAME]` | 记录实际本地源码状态与溯源 |
-| `verify --snapshot FILE --output FILE [--run-checks --root DIR]` | 执行声明的相等断言并记录绑定证据 |
+| `verify --snapshot FILE --output FILE [--run-checks --root DIR] [--evidence FILE]` | 执行声明的相等断言并记录绑定证据 |
 | `compare --before FILE --after FILE --output FILE [--evidence FILE] [--html FILE] [--fail-on-impact]` | 分析候选变化，可选生成 HTML / CI 门禁 |
 | `cases sync/list/update --state FILE` | 同步、查看、认领或处理绑定候选快照的变更项 |
 | `report --input FILE --output FILE` | 将已有影响报告 JSON 渲染为独立 HTML |
@@ -161,8 +176,8 @@ robot-workflow open --state-dir /tmp/my-robot-repos-workflow
 | `potential_impact` | 声明的依赖路径将候选变化连接到该组件 |
 | `no_registered_impact` | 当前图中没有匹配路径；兼容性仍未证明 |
 | `unknown` | 所需源码缺失/无效，或变化位于登记契约之外 |
-| `verified` / `failed` | 记录的声明检查在该精确快照上通过/失败 |
-| `stale` | 提供的证据属于另一快照或源码指纹 |
+| `verified` / `failed` | 声明检查在当前依赖绑定下通过/失败 |
+| `stale` | 相关输入、检查定义或支持的绑定发生变化 |
 | `unverified` | 没有记录当前证据 |
 
 ## 边界与后续方向
@@ -170,16 +185,29 @@ robot-workflow open --state-dir /tmp/my-robot-repos-workflow
 - 默认的发现、监测和源码验证不执行被检查代码。`verify --run-checks --root DIR` 显式执行配置的命令；运行器不是沙箱，不会自动调度 ROS、训练或真机任务。
 - 图由声明构建。Python AST 变化是保守的语义变化信号，不能证明行为变化。YAML 使用词法提取器，而非完整 YAML 解析器。
 - H5、checkpoint tensor layout、外部校准、时序行为和真实执行器映射需要额外提取器或外部验证。源码 manifest 建立声明的源码契约；物理需求需要外部证据。
-- 0.4.0 提供依赖发现、轮询、安全同步与通用出站 Webhook；不包含 GitHub Webhook 接收器、图编辑器、CAD/PLM 集成或 AI agent。
+- 0.5.0 提供依赖发现、轮询、安全同步与通用出站 Webhook；网页工作台可编辑负责人和发现的依赖；尚未包含通用图编辑器、GitHub Webhook 接收器、CAD/PLM 集成或 AI agent。
 - 证据记录声明检查的实际范围，包括源码断言、接口相等和显式命令结果；不是签名证明，不能自动推断仿真、真机安全或 Sim2Real 成功。报告可能包含源码片段，外部分享前应审查。
 - 固定版本的现有部署不会改变。报告分析沿声明的工程关系采用候选版本的影响，其中也包含规划中的接口。
-- 当前增加显式接口契约、命令检查和本地变更处理；后续应完善领域提取器、验证范围和团队共享服务。
+- 当前提供端口声明、按依赖范围绑定的证据和本地网页操作；领域提取器、团队认证与 PR 集成仍是后续工作。
 
 ## 契约、命令检查与变更处理
 
-0.4.0 的接口检查和处理状态继续使用配置 schema 1；原有配置无需新增字段即可使用。`interface_contracts` 对比提供者与消费者的显式字段；`validation_checks` 定义需要显式执行的命令。未执行的命令显示 unknown，不能被其他通过的源码检查覆盖。
+0.5.0 的接口检查和处理状态继续使用配置 schema 1；原有配置无需新增字段即可使用。`interface_contracts` 对比提供者与消费者的显式字段；`validation_checks` 定义需要显式执行的命令。未执行的命令显示 unknown，不能被其他通过的源码检查覆盖。
 
-`cases sync/list/update` 管理待处理、已认领、已处理、已排除状态；关闭需要说明。监测自动生成本地处理项，报告可嵌入处理状态。认领或关闭通过 CLI 完成，离线页面仅展示；已处理不等于兼容性验证通过。配置示例和完整命令见[用户说明书](docs/user-guide.zh-CN.md#契约命令检查与变更处理)。
+`cases sync/list/update` 管理待处理、已认领、已处理、已排除状态；关闭需要说明。监测自动生成本地处理项，报告可嵌入处理状态。认领或关闭通过 CLI 或本地控制台完成，离线页面仅展示；已处理不等于兼容性验证通过。配置示例和完整命令见[用户说明书](docs/user-guide.zh-CN.md#契约命令检查与变更处理)。
+
+## 端口与精确重测
+
+声明节点的 `kind` 和可选 `ports`，再用 `from_port`/`to_port` 连接输出/输入端口 ID。接口视图比较配置声明，不产生运行证据。字段格式见[架构说明](docs/architecture.zh-CN.md#工程对象与端口)。
+
+传入旧证据，可复用声明依赖和定义仍有效的检查：
+
+```bash
+robot-workflow verify --snapshot /tmp/robot-candidate.json \
+  --evidence /tmp/robot-evidence.json --output /tmp/robot-candidate-evidence.json
+```
+
+报告逐需求列出 `reuse`、`run` 或 `not_configured`，以及检查 ID 和原因。相关字段或命令输入改变使证据过期；无关源码变化可以保留证据。命令复用保守检查所选仓库全部跟踪、未跟踪和忽略文件、工具实现、环境变量摘要以及命令程序身份；稀疏或不可读输入显示 unknown。它不覆盖所有外部服务、系统依赖或硬件状态。`--run-checks --root DIR` 显式执行无法复用的检查；强制重测时省略 `--evidence`。没有范围字段的旧证据仍绑定其精确快照。
 
 ## 开发与许可证
 

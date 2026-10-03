@@ -21,6 +21,21 @@
           "glob": "model.json",
           "parser": "json"
         }
+      ],
+      "kind": "model",
+      "ports": [
+        {
+          "id": "joint-state",
+          "direction": "output",
+          "contract": {
+            "type": "joint_state",
+            "unit": "rad",
+            "joint_order": [
+              "shoulder",
+              "wrist"
+            ]
+          }
+        }
       ]
     },
     {
@@ -35,6 +50,21 @@
       ],
       "checks": [
         "Validate named joint mapping"
+      ],
+      "kind": "component",
+      "ports": [
+        {
+          "id": "robot-state",
+          "direction": "input",
+          "contract": {
+            "type": "joint_state",
+            "unit": "rad",
+            "joint_order": [
+              "shoulder",
+              "wrist"
+            ]
+          }
+        }
       ]
     }
   ],
@@ -48,7 +78,9 @@
       "emits": [
         "data"
       ],
-      "reason": "Policy input consumes the robot joint order and units"
+      "reason": "Policy input consumes the robot joint order and units",
+      "from_port": "joint-state",
+      "to_port": "robot-state"
     }
   ],
   "requirements": [

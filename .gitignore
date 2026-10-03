@@ -10,3 +10,4 @@ CHANGELOG*
 changelog*
 local-validation/
 private/
+.pytest_cache/

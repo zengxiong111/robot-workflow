@@ -4,10 +4,11 @@
 
 Robot Workflow is an open-source engineering workflow tool for robot teams. Register the relationships between robot models, reference data, training, perception and deployment; compare versioned source snapshots; inspect downstream impact and the evidence needed to adopt a change.
 
-Version 0.4.0 provides a local CLI and an offline interactive report. Runtime dependencies: Python 3.11+ and Git for checkout provenance. No AI service, ROS installation or simulator is required.
+Version 0.5.0 provides a local CLI, a loopback Web workspace and an offline interactive report. Runtime dependencies: Python 3.11+ and Git for checkout provenance. No AI service, ROS installation or simulator is required.
 
 ## Contents
 
+- [Local Web workspace](#local-web-workspace)
 - [Guided setup](#guided-setup)
 - [Capabilities](#capabilities)
 - [Create and monitor your workflow](#create-and-monitor-your-workflow)
@@ -16,9 +17,22 @@ Version 0.4.0 provides a local CLI and an offline interactive report. Runtime de
 - [Commands and status](#commands-and-status)
 - [Boundaries and roadmap](#boundaries-and-roadmap)
 - [Contracts, command checks and change cases](#contracts-command-checks-and-change-cases)
+- [Ports and selective revalidation](#ports-and-selective-revalidation)
 - [Development and license](#development-and-license)
 
 Read the [User Manual](docs/user-guide.md) for setup, dependency review, monitoring, owner Webhooks and troubleshooting.
+
+## Local Web workspace
+
+Start with an existing directory for inspected repositories and a separate state directory:
+
+```bash
+robot-workflow serve --root /tmp/my-robot-repos --state-dir /tmp/my-robot-workflow --port 8780
+```
+
+Open `http://127.0.0.1:8780`. Review discovered repositories, edit component owners, keep/remove/reverse inferred edges, then save the reviewed configuration. You can explicitly clone a GitHub HTTPS repository into a new relative directory. Refresh captures sources and generates the report; change cases can be claimed, closed with a note, and reopened in the page. The command-check button explicitly executes declared commands; ordinary refresh does not execute them. The console is a local single-user service, not an authenticated shared team server. Saving a changed configuration establishes its own baseline and retains earlier state; it does not establish cross-configuration compatibility. Rediscovery after adding a repository preserves authored registrations and appends new findings.
+
+The offline report remains available. The live console adds operations; it does not change evidence scope or certify robot behavior.
 
 ## Guided setup
 
@@ -50,14 +64,14 @@ Setup prints a continuous local-observation command. Remove `--no-update` to ena
 | Source snapshots | Git commits, dirty state, file SHA-256, registered source coverage and out-of-contract Git inventory |
 | Semantic changes | URDF kinematics/dynamics/visuals, Python AST, JSON, TOML, conservative YAML, ROS schemas, text and binary hashes |
 | Impact analysis | Directed transitive propagation with source, representative paths, reasons and required checks |
-| Evidence | Deterministic source assertions bound to exact snapshot and source fingerprints; stale evidence is explicit |
+| Evidence | Declared checks bound to relevant input/check signatures; legacy records stay snapshot-bound; stale evidence is explicit |
 | Interactive report | Workflow canvas, scenario selection, component inspector, search, status filter, zoom, changes, requirements and version bundle |
 | Offline use | Standalone HTML with English/Chinese controls, JSON import/export and no network requests |
 | Integration gate | Optional nonzero exit status for source changes, incomplete coverage or unregistered changes |
 
 ## Create and monitor your workflow
 
-Place your existing Git checkouts under one directory. Configuration, reports and monitor state must stay outside those checkouts. No inspected project code is executed.
+Place your existing Git checkouts under one directory. Configuration, reports and monitor state must stay outside those checkouts. Discovery and monitoring do not execute inspected project code.
 
 1. Start a workflow with automatic repository and dependency discovery:
 
@@ -139,6 +153,7 @@ See [architecture and configuration](docs/architecture.md) for parser facets, as
 
 | Command | Purpose |
 |---|---|
+| `serve --root DIR --state-dir DIR [--config FILE] [--port 8780]` | Run the local Web workspace; configuration defaults to STATE_DIR/workflow.json |
 | `setup [--root DIR] [--state-dir DIR] [--yes] [--no-open]` | Guided local setup, edge review and first report |
 | `doctor --config FILE --root DIR` | Explain local setup and coverage problems |
 | `open --state-dir DIR` | Open the latest monitor report |
@@ -148,7 +163,7 @@ See [architecture and configuration](docs/architecture.md) for parser facets, as
 | `watch --config FILE --root DIR --state-dir DIR [--interval 30] [--once] [--no-update]` | Persist impact reports and route change events to owners |
 | `fetch --config FILE --root DIR` | Create new sparse GitHub clones for declared source globs; existing directories are never replaced |
 | `snapshot --config FILE --root DIR --output FILE [--label NAME]` | Capture actual local source state and provenance |
-| `verify --snapshot FILE --output FILE [--run-checks --root DIR]` | Run declared equality assertions and record bound evidence |
+| `verify --snapshot FILE --output FILE [--run-checks --root DIR] [--evidence FILE]` | Run declared equality assertions and record bound evidence |
 | `compare --before FILE --after FILE --output FILE [--evidence FILE] [--html FILE] [--fail-on-impact]` | Analyze candidate change and optionally generate HTML / CI gate |
 | `cases sync/list/update --state FILE` | Synchronize, inspect, claim or dispose of candidate-bound change cases |
 | `report --input FILE --output FILE` | Render an existing impact-report JSON as standalone HTML |
@@ -161,8 +176,8 @@ Exit codes: `0` completed; `1` invalid input or operational failure; `2` a faile
 | `potential_impact` | A declared dependency path connects this candidate change to the component |
 | `no_registered_impact` | No matching path in the current graph; compatibility remains unproven |
 | `unknown` | Required source missing/invalid, or a change is outside registered contracts |
-| `verified` / `failed` | The recorded source assertion passed/failed for this exact snapshot |
-| `stale` | Supplied evidence belongs to another snapshot or source fingerprint |
+| `verified` / `failed` | Declared checks passed/failed with current dependency bindings |
+| `stale` | A required input, check definition or supported binding changed |
 | `unverified` | No current evidence is recorded |
 
 ## Boundaries and roadmap
@@ -170,16 +185,29 @@ Exit codes: `0` completed; `1` invalid input or operational failure; `2` a faile
 - Discovery, monitoring and source verification do not execute inspected code by default. `verify --run-checks --root DIR` explicitly executes configured commands; the runner is not a sandbox and does not automatically schedule ROS, training or hardware jobs.
 - Graph extraction is declarative. Python AST changes are conservative semantic-change signals, not proof that behavior changes. YAML is a lexical extractor rather than a full YAML parser.
 - H5, checkpoint tensor layouts, external calibration, timing behavior and actual physical actuator mappings need additional extractors or external verification. Source manifests establish declared source contracts; physical requirements need external evidence.
-- Version 0.4.0 adds discovery, polling, safe synchronization and generic outbound webhooks. It does not provide a GitHub webhook receiver, graph editor, CAD/PLM integration or AI agent.
+- Version 0.5.0 adds discovery, polling, safe synchronization and generic outbound webhooks. The local console edits owners and discovered edges; a general graph editor, GitHub webhook receiver, CAD/PLM integration and AI agent are not included.
 - Evidence records the actual scope of declared checks, including source assertions, interface equality and explicit command results. It is not a signed attestation and does not automatically establish simulation, hardware safety or Sim2Real success. Reports may contain source snippets: review them before external sharing.
 - Existing pinned deployments are unchanged. Reports analyze candidate adoption across declared engineering relationships, including planned interfaces.
-- The current version adds explicit interface contracts, command checks and local change cases; richer domain extractors, verification scope and shared team services remain follow-up work.
+- The current version provides typed ports, scoped evidence and a local operations console; domain extractors, shared team authentication and PR integration remain follow-up work.
 
 ## Contracts, command checks and change cases
 
-0.4.0 keeps interface checks and case state on configuration schema 1; existing configurations work without adding fields. `interface_contracts` compares explicit producer and consumer fields; `validation_checks` declares commands requiring explicit execution. Skipped commands remain unknown and cannot be overridden by other passing source checks.
+0.5.0 keeps interface checks and case state on configuration schema 1; existing configurations work without adding fields. `interface_contracts` compares explicit producer and consumer fields; `validation_checks` declares commands requiring explicit execution. Skipped commands remain unknown and cannot be overridden by other passing source checks.
 
-`cases sync/list/update` manages open, claimed, resolved and dismissed states; closing requires a note. Monitoring creates local cases automatically, and reports can embed case state. Claiming or closing uses the CLI; offline pages only display state. Resolved does not certify compatibility. See the [user manual](docs/user-guide.md#contracts-command-checks-and-change-cases) for configuration and commands.
+`cases sync/list/update` manages open, claimed, resolved and dismissed states; closing requires a note. Monitoring creates local cases automatically, and reports can embed case state. Claiming or closing uses the CLI or local console; offline pages only display state. Resolved does not certify compatibility. See the [user manual](docs/user-guide.md#contracts-command-checks-and-change-cases) for configuration and commands.
+
+## Ports and selective revalidation
+
+Declare node `kind` and optional `ports`, then connect output/input IDs with `from_port`/`to_port`. The interface view compares configuration declarations; it does not produce runtime evidence. See [the architecture](docs/architecture.md#engineering-objects-and-ports) for the schema.
+
+Pass prior evidence to reuse checks whose declared dependencies and definitions remain valid:
+
+```bash
+robot-workflow verify --snapshot /tmp/robot-candidate.json \
+  --evidence /tmp/robot-evidence.json --output /tmp/robot-candidate-evidence.json
+```
+
+The report lists each requirement as `reuse`, `run` or `not_configured`, with check IDs and reasons. Relevant field or command-input changes expire evidence; unrelated source changes can preserve it. Command reuse conservatively checks tracked, untracked and ignored files in the selected repository, tool implementation, environment-variable digest and command executable identity; sparse or unreadable inputs remain unknown. It does not cover every external service, system dependency or hardware state. `--run-checks --root DIR` explicitly runs checks that cannot be reused. To force fresh checks, omit `--evidence`. Old evidence without scope remains tied to its exact snapshot.
 
 ## Development and license
 

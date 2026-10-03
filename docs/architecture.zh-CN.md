@@ -2,7 +2,7 @@
 
 [English](architecture.md)
 
-本文规定 0.4.0 的工程依赖图、快照、影响与证据边界。配置采用 JSON；运行依赖为 Python 3.11+，记录 Git 溯源时需要 Git。
+本文规定 0.5.0 的工程依赖图、快照、影响与证据边界。配置采用 JSON；运行依赖为 Python 3.11+，记录 Git 溯源时需要 Git。
 
 ## 目录
 
@@ -29,7 +29,7 @@ workflow.json + local checkouts
      impact JSON → offline HTML
 ```
 
-源码按数据解析，不导入 Python 文件，不执行机器人代码、训练入口或 ROS 节点。只有 `fetch` 创建 checkout；snapshot/compare/report 命令不修改输入仓库。
+默认源码分析按数据解析，不导入 Python 文件，也不执行机器人代码、训练入口或 ROS 节点；显式声明命令检查可以执行仓库代码。`fetch` 和显式网页仓库导入创建 checkout；snapshot/compare/report 命令不修改输入仓库。
 
 ## 配置
 
@@ -48,6 +48,24 @@ workflow.json + local checkouts
 仓库路径与 artifact glob 不能使用绝对路径或 `..`。源码符号链接不能越出仓库或指向 `.git`。glob 无匹配、文件超限、语法无效和未解析的 LFS pointer 都会造成覆盖未知。
 
 同一个文件可以登记在不同组件中。避免在同一组件内使用解析器不同的重叠 glob；当前由最后匹配的声明决定其表示。
+
+### 工程对象与端口
+
+可选的 `nodes[].kind` 支持 `component`、`model`、`dataset`、`calibration`、`test`、`requirement` 或 `artifact`。端口包含 `id`、`direction`（`input`/`output`）、可选标签和契约。支持的契约字段为 `type`、`unit`、`frame`、`joint_order` 和有限正数 `rate_hz`。带端口的连线必须同时声明 `from_port` 与 `to_port`，连接已存在的输出端口与输入端口。
+
+```json
+{
+  "id": "robot",
+  "kind": "model",
+  "ports": [{
+    "id": "joint-state",
+    "direction": "output",
+    "contract": {"type": "joint_state", "unit": "rad", "joint_order": ["j1", "j2"]}
+  }]
+}
+```
+
+报告逐字段比较声明；缺少声明显示未知。不推断单位转换或坐标系变换。声明一致与源码或执行证据分别展示。
 
 ## 提取器
 
@@ -99,7 +117,7 @@ artifact 的 `facet` 覆盖会将提取值嵌套在指定类别下。例如可�
 
 使用 `equals_source` 替代 `equals` 可与另一提取源对比。JSON Pointer 支持列表索引和 `~0` / `~1` 转义。
 
-`verify` 输出需求 ID、结果、检查详情、精确快照 ID，以及需求涉及的全部组件指纹。`compare --evidence` 仅在绑定均匹配时将记录作为当前证据。候选快照任何位置发生变化，都会保守地让旧记录过期。没有声明检查的需求保留为未验证；源码覆盖缺失时，即使断言通过也显示 unknown。
+`verify` 记录溯源和 `evidence_scope` 检查签名。源码断言与接口检查绑定选中的提取值、可用性、源码规格和检查定义；无关输入变化不必使其过期。命令检查保守绑定所选仓库的内容清单、命令定义，工具实现、环境变量摘要，以及 Python 和命令程序身份。这不能覆盖全部外部依赖或硬件状态。没有范围字段的旧记录仍要求精确快照和源码指纹一致。覆盖缺失仍为 unknown。
 
 快照 ID 对依赖图、仓库溯源和采集源码状态进行哈希，可发现意外修改，但不是签名或可信证明。证据 JSON 可以由外部编写，因此使用前必须审查。
 
@@ -107,11 +125,11 @@ artifact 的 `facet` 覆盖会将提取值嵌套在指定类别下。例如可�
 
 `interface_contracts` 在需求涉及的组件间对比提取字段，返回 pass/fail/unknown。`validation_checks` 的 argv 通过 `shell=False` 在指定仓库运行；默认跳过并记录 unknown。`verify --run-checks --root DIR` 核对执行前后完整快照身份；超时、执行器缺失、源码变动或覆盖缺失均为 unknown。输出截取为每流 4000 字节；默认超时 60 秒，上限 3600 秒。POSIX 超时终止本次进程组，Windows 仅终止本次主进程。
 
-同一需求的检查合并：任何 fail 保留 fail，否则任何 unknown 保留 unknown，全部 pass 才通过。当前绑定仍以完整快照为粒度。变更处理状态单独存放在源码根目录外，通过文件锁和原子替换更新；报告只显示候选身份匹配的处理项。
+同一需求的检查合并：任何 fail 保留 fail，否则任何 unknown 保留 unknown，全部 pass 才通过。带范围的证据指出可复用结果；旧证据仍绑定完整快照。变更处理状态单独存放在源码根目录外，通过文件锁和原子替换更新；报告只显示候选身份匹配的处理项。
 
 ## 集成与扩展
 
-CI 可执行 `snapshot`、`verify` 和 `compare --fail-on-impact`，并附上 JSON/HTML 供人工审查。0.4.0 提供轮询和出站通知，尚未实现入站 GitHub Webhook 接收器。
+CI 可执行 `snapshot`、`verify` 和 `compare --fail-on-impact`，并附上 JSON/HTML 供人工审查。0.5.0 提供轮询和出站通知，尚未实现入站 GitHub Webhook 接收器。
 
 新增解析器时，在 `contracts.py` 实现并登记名称，添加面向行为的测试，记录其类别。领域无关的图传播保留在 `engine.py`。外部仿真或真机证据需要后续适配器，明确输入/版本绑定和验证范围；工具不会从源文件断言推断外部执行结果。
 
