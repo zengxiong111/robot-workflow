@@ -1,0 +1,22 @@
+name: Tests and package
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install . build
+      - run: python -m unittest discover -s tests -v
+      - run: python scripts/check_docs.py
+      - run: python -m build
+      - run: robot-workflow snapshot --config examples/minimal/workflow.json --root examples/minimal/repositories --output /tmp/baseline.json
+      - run: robot-workflow verify --snapshot /tmp/baseline.json --output /tmp/evidence.json
+      - run: robot-workflow compare --before /tmp/baseline.json --after /tmp/baseline.json --evidence /tmp/evidence.json --output /tmp/report.json --html /tmp/workflow.html --fail-on-impact

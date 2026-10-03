@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "project": "Minimal robot engineering workflow",
+  "repositories": [
+    {
+      "id": "robot",
+      "path": "robot"
+    },
+    {
+      "id": "policy",
+      "path": "policy"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "robot",
+      "label": "Robot model",
+      "repository": "robot",
+      "artifacts": [
+        {
+          "glob": "model.json",
+          "parser": "json"
+        }
+      ]
+    },
+    {
+      "id": "policy",
+      "label": "Policy runtime",
+      "repository": "policy",
+      "artifacts": [
+        {
+          "glob": "input.json",
+          "parser": "json"
+        }
+      ],
+      "checks": [
+        "Validate named joint mapping"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "robot",
+      "to": "policy",
+      "watch": [
+        "data"
+      ],
+      "emits": [
+        "data"
+      ],
+      "reason": "Policy input consumes the robot joint order and units"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "joint-order",
+      "title": "Policy and robot joint orders match",
+      "nodes": [
+        "robot",
+        "policy"
+      ],
+      "assertions": [
+        {
+          "id": "order",
+          "source": {
+            "node": "robot",
+            "path": "model.json",
+            "pointer": "/data/joint_order"
+          },
+          "equals_source": {
+            "node": "policy",
+            "path": "input.json",
+            "pointer": "/data/joint_order"
+          }
+        }
+      ]
+    }
+  ]
+}

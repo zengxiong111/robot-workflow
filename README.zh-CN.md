@@ -1,0 +1,124 @@
+# Robot Workflow
+
+[English](README.md)
+
+Robot Workflow 是面向机器人团队的开源工程工作流工具。登记机器人模型、参考数据、训练、感知和部署之间的关系，对比带版本的源码快照，查看下游影响，以及采用新版本所需的验证证据。
+
+0.1.0 版本提供本地 CLI 和离线交互报告。运行依赖为 Python 3.11+；记录 Git checkout 溯源时需要 Git。无需 AI 服务、ROS 安装或仿真器。
+
+## 目录
+
+- [功能](#功能)
+- [快速开始](#快速开始)
+- [接入自己的工作流](#接入自己的工作流)
+- [命令与状态](#命令与状态)
+- [边界与后续方向](#边界与后续方向)
+- [开发与许可证](#开发与许可证)
+
+## 功能
+
+| 功能 | 行为 |
+|---|---|
+| 工程依赖图 | 组件、仓库、带类型的依赖类别、维护归属、实现状态和需求 |
+| 源码快照 | Git commit、dirty 状态、文件 SHA-256、登记源码覆盖及契约之外的 Git 文件清单 |
+| 语义变化 | URDF 运动学/动力学/visual、Python AST、JSON、TOML、保守 YAML、ROS schema、文本及二进制哈希 |
+| 影响分析 | 有向传递传播，附来源、代表性路径、依据和所需验证 |
+| 验证证据 | 确定性的源文件断言，绑定精确快照与源码指纹；明确显示证据过期 |
+| 交互报告 | 工作流画布、场景选择、组件检查面板、搜索、状态过滤、缩放、变更、需求和版本组合 |
+| 离线使用 | 独立 HTML，支持中英文控件及 JSON 导入/导出，不发起网络请求 |
+| 集成门禁 | 可选的非零退出码，提示源码变化、覆盖缺失或未登记变化 |
+
+## 快速开始
+
+在项目根目录执行。最小示例包含两个小型源码契约，无需外部仓库。
+
+1. 安装到隔离环境：
+
+   ```bash
+   python3 -m venv .venv
+   . .venv/bin/activate
+   python -m pip install .
+   ```
+
+2. 采集并验证示例：
+
+   ```bash
+   robot-workflow snapshot --config examples/minimal/workflow.json \
+     --root examples/minimal/repositories --output /tmp/robot-baseline.json
+   robot-workflow verify --snapshot /tmp/robot-baseline.json \
+     --output /tmp/robot-evidence.json
+   robot-workflow compare --before /tmp/robot-baseline.json \
+     --after /tmp/robot-baseline.json --evidence /tmp/robot-evidence.json \
+     --output /tmp/robot-report.json --html /tmp/robot-workflow.html
+   ```
+
+3. 用浏览器打开 `/tmp/robot-workflow.html`。关节顺序需求应显示已验证，源码影响应为空。
+4. 如需试验变更，修改示例机器人 `model.json` 中的 `joint_order`，将新快照写入 `/tmp/robot-candidate.json`，然后对比基线与候选。重新运行 `verify` 检查新关节顺序关系。试验后恢复示例修改。
+
+生成的报告、源码快照和日志必须放在仓库之外。
+
+## 接入自己的工作流
+
+从[最小配置](examples/minimal/workflow.json)开始。每个节点拥有声明的源码 glob；每条边声明关注哪些上游类别，以及哪些下游类别可能需要重新验证。
+
+```json
+{
+  "from": "robot",
+  "to": "policy",
+  "watch": ["kinematics", "joint_order"],
+  "emits": ["data"],
+  "reason": "Policy FK and joint mapping consume the robot model"
+}
+```
+
+1. 添加仓库，路径相对于 checkout 根目录。
+2. 使用支持的解析器添加组件与源码 glob。
+3. 声明依赖边并审查依据。关系由团队显式登记和维护。
+4. 对适合确定性相等检查的需求添加源文件断言。
+5. 使用同一依赖图采集基线/候选快照；对比并审查候选后，再更新版本组合。
+
+解析类别、断言、覆盖和证据语义见[架构与配置](docs/architecture.zh-CN.md)。依赖图配置变更需要独立审查：工具拒绝对比不同图配置的两个快照，以免悄然丢失依赖。
+
+## 命令与状态
+
+| 命令 | 用途 |
+|---|---|
+| `fetch --config FILE --root DIR` | 按声明的源码 glob 新建稀疏 GitHub clone；不会替换已有目录 |
+| `snapshot --config FILE --root DIR --output FILE [--label NAME]` | 记录实际本地源码状态与溯源 |
+| `verify --snapshot FILE --output FILE` | 执行声明的相等断言并记录绑定证据 |
+| `compare --before FILE --after FILE --output FILE [--evidence FILE] [--html FILE] [--fail-on-impact]` | 分析候选变化，可选生成 HTML / CI 门禁 |
+| `report --input FILE --output FILE` | 将已有影响报告 JSON 渲染为独立 HTML |
+
+退出码：`0` 表示完成；`1` 表示输入错误或操作失败；`2` 表示断言失败或影响门禁触发。影响门禁采用保守策略：源码语义变化、覆盖未知和未登记变化均需要审查。它不是不兼容分类器。
+
+| 状态 | 含义 |
+|---|---|
+| `changed` | 登记源码的语义发生变化 |
+| `potential_impact` | 声明的依赖路径将候选变化连接到该组件 |
+| `no_registered_impact` | 当前图中没有匹配路径；兼容性仍未证明 |
+| `unknown` | 所需源码缺失/无效，或变化位于登记契约之外 |
+| `verified` / `failed` | 记录的源文件断言在该精确快照上通过/失败 |
+| `stale` | 提供的证据属于另一快照或源码指纹 |
+| `unverified` | 没有记录当前证据 |
+
+## 边界与后续方向
+
+- 这是工程工作流与审查工具，不执行训练、ROS 节点、仿真器或真机命令。
+- 图由声明构建。Python AST 变化是保守的语义变化信号，不能证明行为变化。YAML 使用词法提取器，而非完整 YAML 解析器。
+- H5、checkpoint tensor layout、外部校准、时序行为和真实执行器映射需要额外提取器或外部验证。示例使用源码 manifest，并明确将物理/真机需求保留为未验证。
+- 0.1.0 尚未实现自动 webhook 监听、通知投递、图编辑器、CAD/PLM 集成或 AI agent。CLI 可接入团队自己的 CI。
+- 证据是源文件断言记录，不是签名证明，也不能证明仿真、真机安全或 Sim2Real 成功。报告可能包含源码片段，外部分享前应审查。
+- 固定版本的现有部署不会改变。报告分析沿声明的工程关系采用候选版本的影响，其中也包含规划中的接口。
+- 后续应优先增加契约提取器、经审查的依赖发现和外部证据适配，再考虑任务执行。
+
+## 开发与许可证
+
+```bash
+python -m pip install -e .
+python -m unittest discover -s tests -v
+python scripts/check_docs.py
+```
+
+参见[贡献规范](CONTRIBUTING.zh-CN.md)和[实现范围](docs/spec.zh-CN.md)。工具采用 [Apache-2.0](LICENSE)。上游仓库仍分别遵循其许可证；本项目不重新分发其源码、模型、截图、训练日志或历史备份。
+
+工程记录方向参考 [Flow Systems Graph](https://www.flowengineering.com/product/systems-graph)。这是独立实现，与 Flow Engineering 无关联。
