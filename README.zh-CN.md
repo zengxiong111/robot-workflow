@@ -220,3 +220,5 @@ python scripts/check_docs.py
 参见[贡献规范](CONTRIBUTING.zh-CN.md)和[实现范围](docs/spec.zh-CN.md)。工具采用 [Apache-2.0](LICENSE)。上游仓库仍分别遵循其许可证；本项目不重新分发其源码、模型、截图、训练日志或历史备份。
 
 工程记录方向参考 [Flow Systems Graph](https://www.flowengineering.com/product/systems-graph)。这是独立实现，与 Flow Engineering 无关联。
+
+下一步建议和验收标准见 [Flow 产品对照与改进优先级](docs/flow-comparison.zh-CN.md)。这些建议属于计划方向，尚未实现。

@@ -220,3 +220,5 @@ python scripts/check_docs.py
 See [contribution standards](CONTRIBUTING.md) and [implementation scope](docs/spec.md). The tool is licensed under [Apache-2.0](LICENSE). Upstream repositories remain separately licensed; their source, models, screenshots, training logs and historical backups are not redistributed in this project.
 
 The engineering-record direction is informed by [Flow Systems Graph](https://www.flowengineering.com/product/systems-graph). This is an independent implementation, without affiliation with Flow Engineering.
+
+Read the [Flow comparison and improvement priorities](docs/flow-comparison.md) for the proposed next steps and their acceptance criteria. These proposals are not implemented capabilities.
