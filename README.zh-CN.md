@@ -4,11 +4,12 @@
 
 Robot Workflow 是面向机器人团队的开源工程工作流工具。登记机器人模型、参考数据、训练、感知和部署之间的关系，对比带版本的源码快照，查看下游影响，以及采用新版本所需的验证证据。
 
-0.1.0 版本提供本地 CLI 和离线交互报告。运行依赖为 Python 3.11+；记录 Git checkout 溯源时需要 Git。无需 AI 服务、ROS 安装或仿真器。
+0.2.0 版本提供本地 CLI 和离线交互报告。运行依赖为 Python 3.11+；记录 Git checkout 溯源时需要 Git。无需 AI 服务、ROS 安装或仿真器。
 
 ## 目录
 
 - [功能](#功能)
+- [创建并监测自己的工作流](#创建并监测自己的工作流)
 - [快速开始](#快速开始)
 - [接入自己的工作流](#接入自己的工作流)
 - [命令与状态](#命令与状态)
@@ -27,6 +28,35 @@ Robot Workflow 是面向机器人团队的开源工程工作流工具。登记�
 | 交互报告 | 工作流画布、场景选择、组件检查面板、搜索、状态过滤、缩放、变更、需求和版本组合 |
 | 离线使用 | 独立 HTML，支持中英文控件及 JSON 导入/导出，不发起网络请求 |
 | 集成门禁 | 可选的非零退出码，提示源码变化、覆盖缺失或未登记变化 |
+
+## 创建并监测自己的工作流
+
+将已有 Git checkout 放在同一目录下。配置、报告和监测状态必须放在这些 checkout 之外。工具不会执行被检查项目的代码。
+
+1. 启动工作流，自动发现仓库与依赖：
+
+   ```bash
+   robot-workflow start --root /tmp/my-robot-repos \
+     --state-dir /tmp/my-robot-workflow --owner robotics \
+     --webhook-env ROBOT_WORKFLOW_WEBHOOK_URL --interval 30
+   ```
+
+2. 首次启动生成 `/tmp/my-robot-workflow/workflow.json`。审查推断依赖及其源码依据，编辑组件负责人，并按需补充显式契约。编辑配置前先按 Ctrl+C 停止监测，重启后加载已审查配置。
+3. 在环境中设置 `ROBOT_WORKFLOW_WEBHOOK_URL` 即可向自己的通知服务投递。不要把 Webhook 密钥写入配置或版本控制。未配置通知目标时，事件仅记录在本地；已指定环境变量但缺少 URL 时，投递保留为待重试。
+4. 初始化新工作流时，可为每位负责人配置独立路由：
+
+   ```bash
+   robot-workflow init --root /tmp/my-robot-repos \
+     --output /tmp/workflow.json --owner robotics \
+     --route robotics=ROBOTICS_WEBHOOK_URL
+   robot-workflow watch --config /tmp/workflow.json \
+     --root /tmp/my-robot-repos --state-dir /tmp/my-robot-monitor \
+     --interval 30
+   ```
+
+监测按指定间隔轮询，不是 GitHub push Webhook 接收器。它获取并 fast-forward 更新干净的现有分支，报告跳过或失败的同步，比较源码快照，生成影响 HTML/JSON，并按负责人路由事件。首份源码快照建立基线。使用 `--once` 执行一轮，或使用 `--no-update` 只观察本地变化、不拉取。
+
+自动发现利用明确的仓库/软件包引用，并将其记录为推断关系，不是已经证明的行为依赖。需要审查生成的图：隐藏的运行时、硬件和数据依赖仍需手工契约。新增仓库或刷新推断关系时，重新运行 `init` 输出到新文件；初始化拒绝覆盖已审查配置。
 
 ## 快速开始
 
@@ -83,13 +113,17 @@ Robot Workflow 是面向机器人团队的开源工程工作流工具。登记�
 
 | 命令 | 用途 |
 |---|---|
+| `init --root DIR --output FILE [--owner NAME] [--webhook-env ENV] [--route OWNER=ENV]` | 发现已有 checkout 并生成新的可编辑配置 |
+| `start --root DIR --state-dir DIR [--interval 30] [--once] [--no-update]` | 首次初始化，然后使用已保存配置监测 |
+| `sync --config FILE --root DIR` | 获取并快进更新符合条件的现有 checkout |
+| `watch --config FILE --root DIR --state-dir DIR [--interval 30] [--once] [--no-update]` | 保存影响报告并按负责人路由变更事件 |
 | `fetch --config FILE --root DIR` | 按声明的源码 glob 新建稀疏 GitHub clone；不会替换已有目录 |
 | `snapshot --config FILE --root DIR --output FILE [--label NAME]` | 记录实际本地源码状态与溯源 |
 | `verify --snapshot FILE --output FILE` | 执行声明的相等断言并记录绑定证据 |
 | `compare --before FILE --after FILE --output FILE [--evidence FILE] [--html FILE] [--fail-on-impact]` | 分析候选变化，可选生成 HTML / CI 门禁 |
 | `report --input FILE --output FILE` | 将已有影响报告 JSON 渲染为独立 HTML |
 
-退出码：`0` 表示完成；`1` 表示输入错误或操作失败；`2` 表示断言失败或影响门禁触发。影响门禁采用保守策略：源码语义变化、覆盖未知和未登记变化均需要审查。它不是不兼容分类器。
+退出码：`0` 表示完成；`1` 表示输入错误或操作失败；`2` 表示断言失败、影响门禁触发或保护性跳过同步。影响门禁采用保守策略：源码语义变化、覆盖未知和未登记变化均需要审查。它不是不兼容分类器。
 
 | 状态 | 含义 |
 |---|---|
@@ -105,8 +139,8 @@ Robot Workflow 是面向机器人团队的开源工程工作流工具。登记�
 
 - 这是工程工作流与审查工具，不执行训练、ROS 节点、仿真器或真机命令。
 - 图由声明构建。Python AST 变化是保守的语义变化信号，不能证明行为变化。YAML 使用词法提取器，而非完整 YAML 解析器。
-- H5、checkpoint tensor layout、外部校准、时序行为和真实执行器映射需要额外提取器或外部验证。示例使用源码 manifest，并明确将物理/真机需求保留为未验证。
-- 0.1.0 尚未实现自动 webhook 监听、通知投递、图编辑器、CAD/PLM 集成或 AI agent。CLI 可接入团队自己的 CI。
+- H5、checkpoint tensor layout、外部校准、时序行为和真实执行器映射需要额外提取器或外部验证。源码 manifest 建立声明的源码契约；物理需求需要外部证据。
+- 0.2.0 提供依赖发现、轮询、安全同步与通用出站 Webhook；不包含 GitHub Webhook 接收器、图编辑器、CAD/PLM 集成或 AI agent。
 - 证据是源文件断言记录，不是签名证明，也不能证明仿真、真机安全或 Sim2Real 成功。报告可能包含源码片段，外部分享前应审查。
 - 固定版本的现有部署不会改变。报告分析沿声明的工程关系采用候选版本的影响，其中也包含规划中的接口。
 - 后续应优先增加契约提取器、经审查的依赖发现和外部证据适配，再考虑任务执行。

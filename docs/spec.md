@@ -1,4 +1,4 @@
-# Version 0.1.0 Scope
+# Version 0.2.0 Scope
 
 [简体中文](spec.zh-CN.md)
 
@@ -19,6 +19,11 @@ Robot Workflow is a reusable open-source engineering dependency and evidence too
 5. Provide an interactive engineering workflow report with source changes, component inspection, version bundle, requirements/evidence, scenario selection and English/Chinese controls.
 6. Include reusable examples, license, build metadata, automated tests, CI and full paired English/Chinese structured documentation.
 
+7. Discover existing checkouts and concrete cross-repository references without executing inspected code; inferred edges must preserve provider-to-consumer direction and evidence.
+8. Provide simple initialization and start commands without overwriting reviewed configuration.
+9. Poll existing checkouts, fetch and fast-forward eligible clean branches; preserve dirty, divergent and detached checkouts.
+10. Route meaningful events to owner webhooks configured by environment variable; persist delivery retries and avoid repeated successful deliveries.
+
 ## Validation acceptance
 
 - Exercise the generic minimal example with versioned source snapshots.
@@ -28,4 +33,4 @@ Robot Workflow is a reusable open-source engineering dependency and evidence too
 
 ## Delivery boundaries
 
-No training, ROS or physical command execution, automatic notifications, webhook daemon, graph authoring UI, CAD/PLM integrations or model-backed autonomous agents in 0.1.0. Sources, logs and historical snapshots used during validation remain outside the project. Public publication requires an accessible repository creation/push path; local packaging must not be described as an already published GitHub release.
+No training, ROS or physical command execution, GitHub push webhook receiver, graph authoring UI, CAD/PLM integrations or model-backed autonomous agents in 0.2.0. Monitoring uses polling and generic outbound notifications. Sources, logs and historical snapshots used during validation remain outside the project. Public publication requires an accessible repository creation/push path; local packaging must not be described as an already published GitHub release.

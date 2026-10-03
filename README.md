@@ -4,11 +4,12 @@
 
 Robot Workflow is an open-source engineering workflow tool for robot teams. Register the relationships between robot models, reference data, training, perception and deployment; compare versioned source snapshots; inspect downstream impact and the evidence needed to adopt a change.
 
-Version 0.1.0 provides a local CLI and an offline interactive report. Runtime dependencies: Python 3.11+ and Git for checkout provenance. No AI service, ROS installation or simulator is required.
+Version 0.2.0 provides a local CLI and an offline interactive report. Runtime dependencies: Python 3.11+ and Git for checkout provenance. No AI service, ROS installation or simulator is required.
 
 ## Contents
 
 - [Capabilities](#capabilities)
+- [Create and monitor your workflow](#create-and-monitor-your-workflow)
 - [Quick start](#quick-start)
 - [Your own workflow](#your-own-workflow)
 - [Commands and status](#commands-and-status)
@@ -27,6 +28,35 @@ Version 0.1.0 provides a local CLI and an offline interactive report. Runtime de
 | Interactive report | Workflow canvas, scenario selection, component inspector, search, status filter, zoom, changes, requirements and version bundle |
 | Offline use | Standalone HTML with English/Chinese controls, JSON import/export and no network requests |
 | Integration gate | Optional nonzero exit status for source changes, incomplete coverage or unregistered changes |
+
+## Create and monitor your workflow
+
+Place your existing Git checkouts under one directory. Configuration, reports and monitor state must stay outside those checkouts. No inspected project code is executed.
+
+1. Start a workflow with automatic repository and dependency discovery:
+
+   ```bash
+   robot-workflow start --root /tmp/my-robot-repos \
+     --state-dir /tmp/my-robot-workflow --owner robotics \
+     --webhook-env ROBOT_WORKFLOW_WEBHOOK_URL --interval 30
+   ```
+
+2. The first start creates `/tmp/my-robot-workflow/workflow.json`. Review inferred edges and their source evidence, edit component owners and add explicit contracts where needed. Stop with Ctrl+C before editing configuration; restart to load the reviewed configuration.
+3. Set `ROBOT_WORKFLOW_WEBHOOK_URL` in your environment to enable delivery to your notification service. Never put webhook secrets in configuration or version control. With no notification configuration, events are recorded locally only. A configured environment variable with no URL keeps delivery pending for retry.
+4. Use a separate route for each owner when initializing a new workflow:
+
+   ```bash
+   robot-workflow init --root /tmp/my-robot-repos \
+     --output /tmp/workflow.json --owner robotics \
+     --route robotics=ROBOTICS_WEBHOOK_URL
+   robot-workflow watch --config /tmp/workflow.json \
+     --root /tmp/my-robot-repos --state-dir /tmp/my-robot-monitor \
+     --interval 30
+   ```
+
+The monitor polls at the requested interval; it is not a GitHub push webhook receiver. It fetches and fast-forwards clean existing branches, reports skipped or failed synchronization, compares source snapshots, writes impact HTML/JSON and routes events to owners. The first source snapshot establishes the baseline. Use `--once` for one cycle or `--no-update` to observe local changes without pulling.
+
+Automatic discovery uses explicit repository/package references and records them as inferred relationships, not proven behavior dependencies. Review the generated graph: hidden runtime, hardware and data dependencies still need manual contracts. Re-run `init` to a new file when adding repositories or refreshing inferred relationships; initialization refuses to overwrite a reviewed configuration.
 
 ## Quick start
 
@@ -83,13 +113,17 @@ See [architecture and configuration](docs/architecture.md) for parser facets, as
 
 | Command | Purpose |
 |---|---|
+| `init --root DIR --output FILE [--owner NAME] [--webhook-env ENV] [--route OWNER=ENV]` | Discover existing checkouts and create a new editable configuration |
+| `start --root DIR --state-dir DIR [--interval 30] [--once] [--no-update]` | Initialize once, then monitor using the saved configuration |
+| `sync --config FILE --root DIR` | Fetch and fast-forward eligible existing checkouts |
+| `watch --config FILE --root DIR --state-dir DIR [--interval 30] [--once] [--no-update]` | Persist impact reports and route change events to owners |
 | `fetch --config FILE --root DIR` | Create new sparse GitHub clones for declared source globs; existing directories are never replaced |
 | `snapshot --config FILE --root DIR --output FILE [--label NAME]` | Capture actual local source state and provenance |
 | `verify --snapshot FILE --output FILE` | Run declared equality assertions and record bound evidence |
 | `compare --before FILE --after FILE --output FILE [--evidence FILE] [--html FILE] [--fail-on-impact]` | Analyze candidate change and optionally generate HTML / CI gate |
 | `report --input FILE --output FILE` | Render an existing impact-report JSON as standalone HTML |
 
-Exit codes: `0` completed; `1` invalid input or operational failure; `2` a failed assertion or an activated impact gate. The impact gate is conservative: semantic source changes, unknown coverage and unregistered changes require review. It is not an incompatibility classifier.
+Exit codes: `0` completed; `1` invalid input or operational failure; `2` a failed assertion, activated impact gate or protected synchronization skip. The impact gate is conservative: semantic source changes, unknown coverage and unregistered changes require review. It is not an incompatibility classifier.
 
 | State | Meaning |
 |---|---|
@@ -105,8 +139,8 @@ Exit codes: `0` completed; `1` invalid input or operational failure; `2` a faile
 
 - This is an engineering workflow and review tool. It does not run training, ROS nodes, simulators or hardware commands.
 - Graph extraction is declarative. Python AST changes are conservative semantic-change signals, not proof that behavior changes. YAML is a lexical extractor rather than a full YAML parser.
-- H5, checkpoint tensor layouts, external calibration, timing behavior and actual physical actuator mappings need additional extractors or external verification. The example uses source manifests and explicitly leaves physics/hardware requirements unverified.
-- No automatic webhook listener, notification delivery, graph editor, CAD/PLM integration or AI agent is implemented in 0.1.0. CLI invocations can be integrated into your own CI.
+- H5, checkpoint tensor layouts, external calibration, timing behavior and actual physical actuator mappings need additional extractors or external verification. Source manifests establish declared source contracts; physical requirements need external evidence.
+- Version 0.2.0 adds discovery, polling, safe synchronization and generic outbound webhooks. It does not provide a GitHub webhook receiver, graph editor, CAD/PLM integration or AI agent.
 - Evidence is a source assertion record, not a signed attestation or proof of simulation, hardware safety or Sim2Real success. Reports may contain source snippets: review them before external sharing.
 - Existing pinned deployments are unchanged. Reports analyze candidate adoption across declared engineering relationships, including planned interfaces.
 - Future development should prioritize richer contract extractors, reviewed dependency discovery and external evidence adapters before adding task execution.

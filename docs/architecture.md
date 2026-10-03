@@ -2,7 +2,7 @@
 
 [简体中文](architecture.zh-CN.md)
 
-This document specifies the 0.1.0 engineering graph, snapshot, impact and evidence boundaries. Configuration is JSON; runtime dependencies are Python 3.11+ and optional Git provenance.
+This document specifies the 0.2.0 engineering graph, snapshot, impact and evidence boundaries. Configuration is JSON; runtime dependencies are Python 3.11+ and optional Git provenance.
 
 ## Contents
 
@@ -12,6 +12,8 @@ This document specifies the 0.1.0 engineering graph, snapshot, impact and eviden
 - [Impact and version semantics](#impact-and-version-semantics)
 - [Evidence and coverage](#evidence-and-coverage)
 - [Integration and extension](#integration-and-extension)
+
+- [Discovery and monitoring](#discovery-and-monitoring)
 
 ## Data flow
 
@@ -103,8 +105,16 @@ Snapshot IDs hash the graph, repository provenance and captured source state. Th
 
 ## Integration and extension
 
-CI can invoke `snapshot`, `verify` and `compare --fail-on-impact`, then attach the JSON/HTML output for human review. Version 0.1.0 has no webhook listener or automatic notification service.
+CI can invoke `snapshot`, `verify` and `compare --fail-on-impact`, then attach the JSON/HTML output for human review. Version 0.2.0 provides polling and outbound notifications; no inbound GitHub webhook receiver is implemented.
 
 To add a parser, implement it in `contracts.py`, register its name, add behavior-focused tests and document its facets. Domain-neutral graph propagation stays in `engine.py`. External simulator or hardware evidence needs a future adapter with explicit input/version bindings and validation scope; no external execution is inferred from source assertions.
 
 The HTML renderer escapes embedded JSON, inserts source values with DOM text nodes, restricts source links to HTTPS GitHub URLs and disables network connections through its content policy. Reports intentionally contain selected source differences; keep them local unless their content is approved for sharing.
+
+## Discovery and monitoring
+
+`init` discovers existing local Git checkouts; `start` saves a configuration once and starts polling. Repository/package references create conservative inferred provider-to-consumer edges with file evidence. This is dependency assistance, not complete static analysis. Edit owners, review the graph and add precise contracts before treating it as a release gate. Adding repositories requires generating and reviewing a new configuration and using fresh monitor state.
+
+`sync` never stashes, resets or merges divergent branches. `watch` observes local source state, optionally synchronizes, compares snapshots and writes reports outside the source root. The polling interval defaults to 30 seconds; network operations and analysis add latency. State-directory locks support Unix and Windows; the automated monitoring tests currently run on Linux.
+
+Notifications use `notifications.webhook_env` for a default endpoint and `notifications.recipients` for owner-to-environment-variable routing. The environment holds URLs; configuration holds only variable names. The JSON POST includes event identity, owners, impacts, source commits and the local report path. A receiver should deduplicate by `event_id`: durable retry provides at-least-once delivery, not exactly-once delivery across crashes. Redirects are refused. Local state contains reports and event history and must remain private when sources are private.
