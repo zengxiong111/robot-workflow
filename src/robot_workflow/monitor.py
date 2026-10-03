@@ -289,6 +289,8 @@ def _watch_once_locked(config, root, state, update, notify):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     report["sync"] = sync
     report_path, html_path = state / f"report-{stamp}.json", state / f"report-{stamp}.html"
+    from .cases import sync_cases
+    report["case_state"] = sync_cases(report, state / "cases.json")
     write_json(report_path, report)
     render(report, html_path)
     event = _event(report, sync, config)

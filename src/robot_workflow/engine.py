@@ -59,6 +59,10 @@ def validate_config(config):
     for req in config.get("requirements", []):
         if not set(req["nodes"]) <= node_ids:
             raise ValueError("Requirement references unknown node")
+    from .interface_contracts import validate as validate_interfaces
+    from .checks import validate as validate_checks
+    validate_interfaces(config)
+    validate_checks(config)
     return config
 
 
@@ -292,11 +296,14 @@ def compare(before, after, evidence=None):
             if valid and record.get("result") in {"pass", "fail"}:
                 state = "verified" if record["result"] == "pass" else "failed"
                 reason = record.get("summary", "Recorded check result")
+            elif valid and record.get("result") == "unknown":
+                state, reason = "unknown", record.get("summary", "Check could not be completed")
             else:
                 state, reason = "stale", "Evidence does not bind to this candidate snapshot and source fingerprints"
         if any(impacts[n]["status"] == "unknown" for n in req["nodes"]):
             state, reason = "unknown", "Required source coverage is incomplete"
-        requirements.append({**req, "state": state, "reason": reason})
+        requirements.append({**req, "state": state, "reason": reason,
+                             "verification": matching[-1] if matching else None})
     return {
         "schema_version": 1, "kind": "impact_report", "project": config.get("project", "Robot Workflow"),
         "baseline": {"id": before["snapshot_id"], "label": before["label"], "repositories": {

@@ -69,6 +69,19 @@ def fetch(config, root):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Robot Workflow: versioned engineering dependency and evidence analysis")
     sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser('setup', help='Guided setup and first local report; no Git updates')
+    p.add_argument('--root')
+    p.add_argument('--state-dir')
+    p.add_argument('--project', default='Robot Workflow')
+    p.add_argument('--owner')
+    p.add_argument('--lang', choices=['zh', 'en'], default='zh')
+    p.add_argument('--yes', action='store_true', help='Use defaults; inferred dependencies remain unreviewed')
+    p.add_argument('--no-open', action='store_true')
+    p = sub.add_parser('doctor', help='Explain configuration, coverage and local Git issues')
+    p.add_argument('--config', required=True)
+    p.add_argument('--root', required=True)
+    p = sub.add_parser('open', help='Open the latest local monitor report')
+    p.add_argument('--state-dir', required=True)
     for command in ('init', 'start'):
         p = sub.add_parser(command, help='Discover local repositories and bootstrap a workflow')
         p.add_argument('--root', required=True)
@@ -110,12 +123,39 @@ def main(argv=None):
     p = sub.add_parser("verify")
     p.add_argument("--snapshot", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument("--root", help="Source root for explicit command checks")
+    p.add_argument("--run-checks", action="store_true", help="Explicitly execute configured validation commands")
+    p = sub.add_parser("cases", help="Create and manage local change cases")
+    p.add_argument("action", choices=["sync", "list", "update"])
+    p.add_argument("--state", required=True)
+    p.add_argument("--input", help="Impact report for sync")
+    p.add_argument("--id", help="Case identity for update")
+    p.add_argument("--status", choices=["open", "claimed", "resolved", "dismissed"])
+    p.add_argument("--actor")
+    p.add_argument("--owner")
+    p.add_argument("--note", default="")
     p = sub.add_parser("report")
     p.add_argument("--input", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument("--cases", help="Local case state to embed in the report")
     args = parser.parse_args(argv)
     try:
-        if args.command == 'init':
+        if args.command == 'setup':
+            from .onboarding import setup
+            return setup(args)
+        elif args.command == 'doctor':
+            from .diagnostics import inspect_workflow
+            result = inspect_workflow(read_json(args.config), args.root)
+            for issue in result['issues']:
+                print(f"[{issue['severity']}] {issue['message']}\n  {issue['action']}")
+            print(json.dumps(result, ensure_ascii=False))
+            return 2 if any(i['severity'] == 'error' for i in result['issues']) else 0
+        elif args.command == 'open':
+            from .onboarding import latest_report, open_report
+            path = latest_report(args.state_dir)
+            print(str(path))
+            open_report(path)
+        elif args.command == 'init':
             initialize(args, args.output)
         elif args.command in ('watch', 'start'):
             from .monitor import watch
@@ -156,18 +196,37 @@ def main(argv=None):
             if args.fail_on_impact and (result["summary"]["semantic_changes"] or result["summary"]["unknown"] or result["summary"]["unregistered_changes"]):
                 return 2
         elif args.command == "verify":
-            result = verify(read_json(args.snapshot))
+            result = verify(read_json(args.snapshot), root=args.root, run_commands=args.run_checks)
             write_json(args.output, result)
-            print(json.dumps({"recorded": len(result["records"]), "failed": sum(r["result"] == "fail" for r in result["records"])}))
-            if any(r["result"] == "fail" for r in result["records"]):
+            print(json.dumps({"recorded": len(result["records"]), "failed": sum(r["result"] == "fail" for r in result["records"]),
+                              "unknown": sum(r["result"] == "unknown" for r in result["records"])}))
+            if any(r["result"] in {"fail", "unknown"} for r in result["records"]):
                 return 2
+        elif args.command == "cases":
+            from .cases import sync_cases, update_case
+            if args.action == "sync":
+                if not args.input:
+                    raise ValueError("cases sync requires --input")
+                result = sync_cases(read_json(args.input), args.state)
+            elif args.action == "update":
+                if not args.id or not args.status or not args.actor:
+                    raise ValueError("cases update requires --id, --status and --actor")
+                result = update_case(args.state, args.id, args.status, args.actor, args.note, args.owner)
+            else:
+                result = read_json(args.state)
+            print(json.dumps(result, ensure_ascii=False))
         else:
             value = read_json(args.input)
             if value.get("kind") != "impact_report":
                 raise ValueError("Expected an impact_report")
+            if args.cases:
+                value["case_state"] = read_json(args.cases)
             render(value, args.output)
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as exc:
         print(f"robot-workflow: {exc}", file=sys.stderr)
+        return 1
+    except EOFError:
+        print("Interactive input unavailable; use setup --root DIR --yes or an interactive terminal", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 0

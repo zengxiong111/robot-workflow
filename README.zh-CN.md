@@ -4,17 +4,43 @@
 
 Robot Workflow 是面向机器人团队的开源工程工作流工具。登记机器人模型、参考数据、训练、感知和部署之间的关系，对比带版本的源码快照，查看下游影响，以及采用新版本所需的验证证据。
 
-0.2.0 版本提供本地 CLI 和离线交互报告。运行依赖为 Python 3.11+；记录 Git checkout 溯源时需要 Git。无需 AI 服务、ROS 安装或仿真器。
+0.4.0 版本 提供本地 CLI 和离线交互报告。运行依赖为 Python 3.11+；记录 Git checkout 溯源时需要 Git。无需 AI 服务、ROS 安装或仿真器。
 
 ## 目录
 
+- [引导式设置](#引导式设置)
 - [功能](#功能)
 - [创建并监测自己的工作流](#创建并监测自己的工作流)
 - [快速开始](#快速开始)
 - [接入自己的工作流](#接入自己的工作流)
 - [命令与状态](#命令与状态)
 - [边界与后续方向](#边界与后续方向)
+- [契约、命令检查与变更处理](#契约命令检查与变更处理)
 - [开发与许可证](#开发与许可证)
+
+完整操作流程见[用户说明书](docs/user-guide.zh-CN.md)，包括初始化、依赖审查、监测、负责人 Webhook 和故障排查。
+
+## 引导式设置
+
+安装后，在交互终端运行一个命令：
+
+```bash
+robot-workflow setup
+```
+
+向导依次询问已有 Git checkout 的父目录、根目录之外的状态目录、工作流名称及组件负责人。对于推断关系，可选择保留（`k`）、删除（`d`）或反向（`r`）。随后检查覆盖、生成第一份本地报告，并调用系统浏览器打开。设置期间不拉取源码；已有保存配置会复用，不会覆盖。
+
+无人值守生成首份报告时，明确指定根目录。默认保留的推断关系仍待审查，`--yes` 不证明依赖正确。
+
+```bash
+robot-workflow setup --root /tmp/my-robot-repos --owner robotics --yes --no-open
+robot-workflow doctor --config /tmp/my-robot-repos-workflow/workflow.json --root /tmp/my-robot-repos
+robot-workflow open --state-dir /tmp/my-robot-repos-workflow
+```
+
+默认状态目录位于根目录同级，名称为 `<root-name>-workflow`。`setup --lang en` 使用英文提示，默认中文。检查涵盖源码覆盖、未指定负责人、本地 Git 问题和待审查推断依赖。`doctor` 对 error 问题返回 2，warning 仍需审查。纯文档仓库存在实际文档时登记该文档，只覆盖文档，不证明运行时行为。浏览器不可用时仍提供报告路径。
+
+设置完成会打印持续观察本地变化的命令；去掉 `--no-update` 即可启用 Git 拉取与快进同步。通知路由仍通过 `init` 或 JSON 配置；此向导不配置 Webhook 密钥、不补全遗漏依赖，也不提供图形编辑。
 
 ## 功能
 
@@ -113,14 +139,18 @@ Robot Workflow 是面向机器人团队的开源工程工作流工具。登记�
 
 | 命令 | 用途 |
 |---|---|
+| `setup [--root DIR] [--state-dir DIR] [--yes] [--no-open]` | 引导本地设置、审查依赖并生成首份报告 |
+| `doctor --config FILE --root DIR` | 解释本地设置与覆盖问题 |
+| `open --state-dir DIR` | 打开最新监测报告 |
 | `init --root DIR --output FILE [--owner NAME] [--webhook-env ENV] [--route OWNER=ENV]` | 发现已有 checkout 并生成新的可编辑配置 |
 | `start --root DIR --state-dir DIR [--interval 30] [--once] [--no-update]` | 首次初始化，然后使用已保存配置监测 |
 | `sync --config FILE --root DIR` | 获取并快进更新符合条件的现有 checkout |
 | `watch --config FILE --root DIR --state-dir DIR [--interval 30] [--once] [--no-update]` | 保存影响报告并按负责人路由变更事件 |
 | `fetch --config FILE --root DIR` | 按声明的源码 glob 新建稀疏 GitHub clone；不会替换已有目录 |
 | `snapshot --config FILE --root DIR --output FILE [--label NAME]` | 记录实际本地源码状态与溯源 |
-| `verify --snapshot FILE --output FILE` | 执行声明的相等断言并记录绑定证据 |
+| `verify --snapshot FILE --output FILE [--run-checks --root DIR]` | 执行声明的相等断言并记录绑定证据 |
 | `compare --before FILE --after FILE --output FILE [--evidence FILE] [--html FILE] [--fail-on-impact]` | 分析候选变化，可选生成 HTML / CI 门禁 |
+| `cases sync/list/update --state FILE` | 同步、查看、认领或处理绑定候选快照的变更项 |
 | `report --input FILE --output FILE` | 将已有影响报告 JSON 渲染为独立 HTML |
 
 退出码：`0` 表示完成；`1` 表示输入错误或操作失败；`2` 表示断言失败、影响门禁触发或保护性跳过同步。影响门禁采用保守策略：源码语义变化、覆盖未知和未登记变化均需要审查。它不是不兼容分类器。
@@ -131,19 +161,25 @@ Robot Workflow 是面向机器人团队的开源工程工作流工具。登记�
 | `potential_impact` | 声明的依赖路径将候选变化连接到该组件 |
 | `no_registered_impact` | 当前图中没有匹配路径；兼容性仍未证明 |
 | `unknown` | 所需源码缺失/无效，或变化位于登记契约之外 |
-| `verified` / `failed` | 记录的源文件断言在该精确快照上通过/失败 |
+| `verified` / `failed` | 记录的声明检查在该精确快照上通过/失败 |
 | `stale` | 提供的证据属于另一快照或源码指纹 |
 | `unverified` | 没有记录当前证据 |
 
 ## 边界与后续方向
 
-- 这是工程工作流与审查工具，不执行训练、ROS 节点、仿真器或真机命令。
+- 默认的发现、监测和源码验证不执行被检查代码。`verify --run-checks --root DIR` 显式执行配置的命令；运行器不是沙箱，不会自动调度 ROS、训练或真机任务。
 - 图由声明构建。Python AST 变化是保守的语义变化信号，不能证明行为变化。YAML 使用词法提取器，而非完整 YAML 解析器。
 - H5、checkpoint tensor layout、外部校准、时序行为和真实执行器映射需要额外提取器或外部验证。源码 manifest 建立声明的源码契约；物理需求需要外部证据。
-- 0.2.0 提供依赖发现、轮询、安全同步与通用出站 Webhook；不包含 GitHub Webhook 接收器、图编辑器、CAD/PLM 集成或 AI agent。
-- 证据是源文件断言记录，不是签名证明，也不能证明仿真、真机安全或 Sim2Real 成功。报告可能包含源码片段，外部分享前应审查。
+- 0.4.0 提供依赖发现、轮询、安全同步与通用出站 Webhook；不包含 GitHub Webhook 接收器、图编辑器、CAD/PLM 集成或 AI agent。
+- 证据记录声明检查的实际范围，包括源码断言、接口相等和显式命令结果；不是签名证明，不能自动推断仿真、真机安全或 Sim2Real 成功。报告可能包含源码片段，外部分享前应审查。
 - 固定版本的现有部署不会改变。报告分析沿声明的工程关系采用候选版本的影响，其中也包含规划中的接口。
-- 后续应优先增加契约提取器、经审查的依赖发现和外部证据适配，再考虑任务执行。
+- 当前增加显式接口契约、命令检查和本地变更处理；后续应完善领域提取器、验证范围和团队共享服务。
+
+## 契约、命令检查与变更处理
+
+0.4.0 的接口检查和处理状态继续使用配置 schema 1；原有配置无需新增字段即可使用。`interface_contracts` 对比提供者与消费者的显式字段；`validation_checks` 定义需要显式执行的命令。未执行的命令显示 unknown，不能被其他通过的源码检查覆盖。
+
+`cases sync/list/update` 管理待处理、已认领、已处理、已排除状态；关闭需要说明。监测自动生成本地处理项，报告可嵌入处理状态。认领或关闭通过 CLI 完成，离线页面仅展示；已处理不等于兼容性验证通过。配置示例和完整命令见[用户说明书](docs/user-guide.zh-CN.md#契约命令检查与变更处理)。
 
 ## 开发与许可证
 

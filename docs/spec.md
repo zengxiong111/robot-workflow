@@ -1,4 +1,4 @@
-# Version 0.2.0 Scope
+# Version 0.4.0 Scope
 
 [简体中文](spec.zh-CN.md)
 
@@ -24,6 +24,11 @@ Robot Workflow is a reusable open-source engineering dependency and evidence too
 9. Poll existing checkouts, fetch and fast-forward eligible clean branches; preserve dirty, divergent and detached checkouts.
 10. Route meaningful events to owner webhooks configured by environment variable; persist delivery retries and avoid repeated successful deliveries.
 
+11. Compare explicit producer/consumer fields; missing data is unknown, with no inferred unit or frame conversions.
+12. Execute declared commands only with explicit opt-in, check snapshot identity before/after, bound timeout/output, and combine all declared checks.
+13. Persist owner claims, disposition notes and reopening; case state is separate from verification results.
+14. Display check details, current-snapshot cases and input/output direction in reports.
+
 ## Validation acceptance
 
 - Exercise the generic minimal example with versioned source snapshots.
@@ -33,4 +38,4 @@ Robot Workflow is a reusable open-source engineering dependency and evidence too
 
 ## Delivery boundaries
 
-No training, ROS or physical command execution, GitHub push webhook receiver, graph authoring UI, CAD/PLM integrations or model-backed autonomous agents in 0.2.0. Monitoring uses polling and generic outbound notifications. Sources, logs and historical snapshots used during validation remain outside the project. Public publication requires an accessible repository creation/push path; local packaging must not be described as an already published GitHub release.
+0.4.0 does not execute inspected code by default; declared commands require explicit `verify --run-checks`. The runner is not a sandbox, and monitoring does not automatically execute physical jobs. GitHub push webhook receivers, graph authoring UI, CAD/PLM integrations and model-backed autonomous agents are not included. Monitoring uses polling and generic outbound notifications. Sources, logs and historical snapshots used during validation remain outside the project. Public publication requires an accessible repository creation/push path; local packaging must not be described as an already published GitHub release.

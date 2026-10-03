@@ -93,6 +93,17 @@ def _artifact_paths(files, repo):
             len(ranked) - len(selected))
 
 
+def _documentation_artifacts(files, repo):
+    """Return readable Markdown entrypoints as documentation-only coverage."""
+    candidates = [p for p in files if p.suffix.lower() == ".md" and
+                  (p.name.lower().startswith("readme") or "docs" in
+                   {part.lower() for part in p.relative_to(repo).parts[:-1]})]
+    candidates.sort(key=lambda p: (0 if p.name.lower().startswith("readme") else 1,
+                                   p.relative_to(repo).as_posix()))
+    return [{"glob": p.relative_to(repo).as_posix(), "parser": "markdown"}
+            for p in candidates[:20]]
+
+
 def _package_info(files):
     names, deps = set(), []
     for p in files:
@@ -189,8 +200,12 @@ def discover(root, project="Robot Workflow"):
         if omitted:
             notes.append(f"{rel}: omitted {omitted} supported artifacts beyond the 80-artifact limit")
         if not artifacts:
-            artifacts = [{"glob": ".gitmodules" if (repo / ".gitmodules").is_file() else ".gitignore", "parser": "text"}]
-            notes.append(f"{rel}: no supported source artifacts; placeholder glob selected")
+            artifacts = _documentation_artifacts(files, repo)
+            if artifacts:
+                notes.append(f"{rel}: documentation-only coverage from Markdown; no functional source artifacts found")
+            else:
+                artifacts = [{"glob": ".gitmodules" if (repo / ".gitmodules").is_file() else ".gitignore", "parser": "text"}]
+                notes.append(f"{rel}: no readable supported source or Markdown documentation; unknown placeholder selected")
         repos.append({"id": rid, "path": rel})
         nodes.append({"id": rid, "label": repo.name, "repository": rid,
                       "artifacts": artifacts, "owner": "unassigned"})

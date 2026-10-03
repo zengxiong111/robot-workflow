@@ -27,7 +27,7 @@ Use the minimal example in the README for an integration smoke check. Generated 
 ## Coding and review standards
 
 - Keep the runtime standard-library-only; justify any new dependency.
-- Never execute/import inspected repository code. Use parsers and explicit source contracts.
+- Discovery, monitoring and default verification never execute/import inspected repository code; use parsers and explicit source contracts. Declared commands run only with explicit `verify --run-checks --root DIR`; preserve snapshot binding, output limits, timeouts and owned-process cleanup.
 - Preserve directed facet propagation, version provenance and unknown coverage. Do not label lack of a graph path as verified compatibility.
 - Bind evidence to source inputs and state its scope. A source assertion cannot establish simulator, hardware or Sim2Real success.
 - Use focused modules and descriptive names. Avoid speculative abstractions and duplicated graph logic.

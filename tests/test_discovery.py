@@ -123,6 +123,22 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn("README.md", globs)
         self.assertTrue(any("large.py" in note for note in config["discovery"]["notes"]))
 
+    def test_documentation_only_checkout_uses_readable_markdown_and_says_so(self):
+        repo = self.root / "docs-only"
+        git_repo(repo)
+        (repo / "README.md").write_text("# Setup\nRun the documented workflow.\n")
+        (repo / "docs").mkdir()
+        (repo / "docs" / "design.md").write_text("# Design\n")
+        config = discover(self.root)
+        artifacts = config["nodes"][0]["artifacts"]
+        self.assertEqual(artifacts, [{"glob": "README.md", "parser": "markdown"},
+                                     {"glob": "docs/design.md", "parser": "markdown"}])
+        self.assertTrue(any("documentation-only coverage" in note
+                            for note in config["discovery"]["notes"]))
+        result = snapshot(config, self.root)["nodes"]["docs-only"]
+        self.assertEqual(set(result["files"]), {"README.md", "docs/design.md"})
+        self.assertTrue(all(item["parser"] == "markdown" for item in result["files"].values()))
+
 
 if __name__ == "__main__":
     unittest.main()
